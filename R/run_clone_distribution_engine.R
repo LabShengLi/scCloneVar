@@ -123,14 +123,19 @@ run_clone_distribution_engine <- function(
       ) +
       ggplot2::facet_wrap(~FacetOrder, nrow = 1) +
       ggplot2::scale_fill_manual(values = pal) +
-      ggplot2::scale_y_continuous(limits = c(0, 1)) +
+      ggplot2::scale_y_continuous(limits = c(0, 1),expand = c(0, 0)) +
       ggplot2::labs(
         title = title,
         y = "Relative clone size",
         x = NULL
       ) +
       ggplot2::theme_classic() +
-      ggplot2::theme(legend.position = "none")
+      ggplot2::theme_classic(base_size = 11) +  # slightly smaller base font
+      ggplot2::theme(
+        legend.position = "none",
+        panel.spacing = grid::unit(0.2, "lines"),  # reduce space between facets
+        plot.margin = ggplot2::margin(4, 4, 4, 4)  # tighten margins
+      )
 
     plot_list[[comp_name]] <- p
 

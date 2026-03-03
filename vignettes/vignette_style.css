@@ -1,0 +1,20 @@
+/* Title */
+h1.title {
+  font-size: 36px;
+  text-align: center;
+  margin-bottom: 10px;
+}
+
+/* Author */
+p.author {
+  font-size: 20px;
+  text-align: center;
+  margin-bottom: 5px;
+}
+
+/* Date */
+p.date {
+  font-size: 18px;
+  text-align: center;
+  margin-bottom: 30px;
+}

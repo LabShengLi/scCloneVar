@@ -7,6 +7,7 @@ run_low_high_OA_analysis_for_a_single_sample <- function(
     sample_label = "Sample",
     output_dir = "OA_Analysis",
     clone_col = "CloneID",
+    umap_reduction = "umap",
     HSC_types = c("LT-HSC","ST-HSC"),
     nonHSC_types = NULL,
     deg_celltypes = c("LT-HSC","ST-HSC","MPP"),
@@ -21,23 +22,23 @@ run_low_high_OA_analysis_for_a_single_sample <- function(
     celltype_colors,
     full_ref_deg_genes_list
 ) {
-  
+
   message("\n==============================")
   message(glue::glue("🔷 Starting OA Analysis: {sample_label}"))
   message("==============================\n")
-  
+
   # -----------------------------------------
   # 0. Create output folder
   # -----------------------------------------
   sample_dir <- file.path(output_dir, sample_label)
   dir.create(sample_dir, recursive = TRUE, showWarnings = FALSE)
   message(glue::glue("📁 Output folder created: {sample_dir}\n"))
-  
+
   # -----------------------------------------
   # 1. DimPlot
   # -----------------------------------------
   message("🔹 Step 1: Creating DimPlot …")
-  
+
   p_dim <- Seurat::DimPlot(
     seurat_obj,
     reduction = "umap",
@@ -53,33 +54,33 @@ run_low_high_OA_analysis_for_a_single_sample <- function(
       legend.title = ggplot2::element_blank(),
       legend.text  = ggplot2::element_text(size = 16)
     )
-  
+
   ggplot2::ggsave(
     filename = file.path(sample_dir, glue::glue("{sample_label}_DimPlot.pdf")),
     plot = p_dim, width = 8.5, height = 7.5
   )
-  
+
   message("Done: DimPlot saved.\n")
-  
+
   # -----------------------------------------
   # 2. Compute OA per clone
   # -----------------------------------------
   message("🔹 Step 2: Computing Output Activity (OA)…")
-  
+
   meta <- seurat_obj@meta.data %>%
     tibble::rownames_to_column("cell_ID") %>%
     dplyr::rename(CloneID = !!clone_col)
-  
+
   if (is.null(nonHSC_types)) {
     nonHSC_types <- setdiff(unique(meta$celltype), HSC_types)
   }
-  
+
   message(glue::glue("   HSC types: {paste(HSC_types, collapse=', ')}"))
   message(glue::glue("   non-HSC types: {paste(nonHSC_types, collapse=', ')}"))
-  
+
   meta <- meta %>%
     dplyr::filter(CloneID != "0", !is.na(CloneID))
-  
+
   clone_counts <- meta %>%
     dplyr::mutate(group = ifelse(celltype %in% HSC_types, "HSC", "nonHSC")) %>%
     dplyr::count(CloneID, group) %>%
@@ -88,7 +89,7 @@ run_low_high_OA_analysis_for_a_single_sample <- function(
       values_from = n,
       values_fill = 0
     )
-  
+
   clone_freq <- clone_counts %>%
     dplyr::mutate(
       total_HSC_all = sum(HSC),
@@ -98,58 +99,70 @@ run_low_high_OA_analysis_for_a_single_sample <- function(
       OA = (nonHSC_freq + 1e-6) / (HSC_freq + 1e-6),
       log2OA = log2(OA)
     )
-  
+
   q_low  <- stats::quantile(clone_freq$OA, 0.30)
   q_high <- stats::quantile(clone_freq$OA, 0.70)
-  
+
   low_clones  <- clone_freq %>% dplyr::filter(OA <= q_low)  %>% dplyr::pull(CloneID)
   high_clones <- clone_freq %>% dplyr::filter(OA >= q_high) %>% dplyr::pull(CloneID)
-  
+
   message(glue::glue("   - Low Output clones: {length(low_clones)}"))
   message(glue::glue("   - High Output clones: {length(high_clones)}"))
-  
+
   openxlsx::write.xlsx(
     clone_freq,
     file = file.path(sample_dir, glue::glue("{sample_label}_OA_by_clone.xlsx")),
     overwrite = TRUE
   )
-  
+
   cell_OA_df <- meta %>%
     dplyr::left_join(clone_freq %>% dplyr::select(CloneID, OA), by = "CloneID") %>%
     dplyr::select(cell_ID, CloneID, OA)
-  
+
   openxlsx::write.xlsx(
     cell_OA_df,
     file = file.path(sample_dir, glue::glue("{sample_label}_OA_by_cell.xlsx")),
     overwrite = TRUE
   )
-  
+
   message("Done: OA tables saved.\n")
-  
+
   # -----------------------------------------
   # 3. OA UMAP plot
   # -----------------------------------------
   message("🔹 Step 3: Creating OA UMAP …")
-  
-  umap_df <- Seurat::Embeddings(seurat_obj, "umap") %>%
-    as.data.frame() %>%
+
+  # choose which reduction to use for plotting OA
+  umap_reduction <- "umap"
+
+  emb <- Seurat::Embeddings(seurat_obj, reduction = umap_reduction)
+
+  if (ncol(emb) < 2) {
+    stop(glue::glue("Reduction '{umap_reduction}' has < 2 dimensions."))
+  }
+
+  umap_df <- emb[, 1:2, drop = FALSE] |>
+    as.data.frame() |>
     tibble::rownames_to_column("cell_ID")
-  
-  meta_umap <- meta %>%
-    dplyr::left_join(umap_df, by = "cell_ID") %>%
-    dplyr::left_join(clone_freq %>% dplyr::select(CloneID, OA), by = "CloneID") %>%
-    dplyr::filter(!is.na(OA))
-  
+
+  # standardize column names for downstream code
+  colnames(umap_df)[2:3] <- c("UMAP_1", "UMAP_2")
+
+  meta_umap <- meta |>
+    dplyr::left_join(umap_df, by = "cell_ID") |>
+    dplyr::left_join(clone_freq |> dplyr::select(CloneID, OA), by = "CloneID") |>
+    dplyr::filter(!is.na(OA), !is.na(UMAP_1), !is.na(UMAP_2))
+
   meta_umap$OA <- scales::squish(meta_umap$OA, c(0, 2))
-  
-  cell_centroids <- meta_umap %>%
-    dplyr::group_by(celltype) %>%
+
+  cell_centroids <- meta_umap |>
+    dplyr::group_by(celltype) |>
     dplyr::summarise(
-      UMAP_1 = median(UMAP_1),
-      UMAP_2 = median(UMAP_2),
+      UMAP_1 = stats::median(UMAP_1, na.rm = TRUE),
+      UMAP_2 = stats::median(UMAP_2, na.rm = TRUE),
       .groups = "drop"
     )
-  
+
   p_oa <- ggplot2::ggplot(meta_umap, ggplot2::aes(UMAP_1, UMAP_2, color = OA)) +
     ggplot2::geom_point(size = 1.4, alpha = 0.55) +
     ggplot2::scale_color_gradientn(
@@ -165,22 +178,22 @@ run_low_high_OA_analysis_for_a_single_sample <- function(
     ) +
     ggplot2::coord_equal() +
     ggplot2::theme_void(base_size = 16) +
-    ggplot2::ggtitle(glue::glue("{sample_label} — OA (Ai) UMAP"))
-  
+    ggplot2::ggtitle(glue::glue("{sample_label} — OA UMAP ({umap_reduction})"))
+
   ggplot2::ggsave(
     filename = file.path(sample_dir, glue::glue("{sample_label}_OA_UMAP.pdf")),
     plot = p_oa, width = 6.5, height = 5.5
   )
-  
+
   message("Done: OA UMAP saved.\n")
-  
+
   # -----------------------------------------
   # 4. DEG
   # -----------------------------------------
   message("🔹 Step 4: Running clonewise DEG (HSC-only)…")
-  
-  seurat_deg <- Seurat::subset(seurat_obj, subset = celltype %in% deg_celltypes)
-  
+
+  seurat_deg <- subset(seurat_obj, subset = celltype %in% deg_celltypes)
+
   deg_out <- run_clonewise_DEG_suite(
     seurat_obj       = seurat_deg,
     clone_set1_ids   = low_clones,
@@ -198,18 +211,18 @@ run_low_high_OA_analysis_for_a_single_sample <- function(
     volcano_name     = glue::glue("{sample_label}_volcano.pdf"),
     output_dir       = sample_dir
   )
-  
+
   message("Done: DEG analysis completed.\n")
   message("   Notes: Adding reference-marker volcano plot ...")
-  
+
   if (!exists("plots")) plots <- list()
-  
+
   mast_top <- deg_out$results$DEG2_TopHVGs_MAST
-  
+
   if (!is.null(mast_top) && nrow(mast_top) > 0) {
-    
+
     reference_genes <- unique(c(low_output_markers, high_output_markers))
-    
+
     df_ref <- mast_top %>%
       dplyr::mutate(
         neg_log10_fdr = -log10(pmax(p_val_adj, 1e-300)),
@@ -220,10 +233,10 @@ run_low_high_OA_analysis_for_a_single_sample <- function(
         ),
         is_reference = gene %in% reference_genes
       )
-    
+
     label_genes <- df_ref %>%
       dplyr::filter(is_reference & significance != "Not significant")
-    
+
     p_ref_volcano <- ggplot2::ggplot(df_ref, ggplot2::aes(avg_log2FC, neg_log10_fdr)) +
       ggplot2::geom_point(ggplot2::aes(color = significance), alpha = 0.85, size = 2.5) +
       ggrepel::geom_text_repel(
@@ -255,85 +268,108 @@ run_low_high_OA_analysis_for_a_single_sample <- function(
         x = expression(log[2]("Fold change")),
         y = expression(-log[10]("adj. P value"))
       )
-    
+
     ref_vol_path <- file.path(
       sample_dir,
       glue::glue("{sample_label}_reference_marker_volcano.pdf")
     )
-    
+
     ggplot2::ggsave(ref_vol_path, p_ref_volcano,
                     width = 8, height = 6, dpi = 300)
-    
+
     message(glue::glue("      ✔ Reference volcano saved: {ref_vol_path}"))
     plots$reference_volcano <- p_ref_volcano
-    
+
   } else {
     message("  No MAST Top-HVGs DEG available — skipping reference volcano.")
   }
-  
+
   # -----------------------------------------
   # 5. Universe-filtered Venn
   # -----------------------------------------
-  message("🔹 Step 5: Creating universe-filtered Venn diagram …")
-  
-  mast_genes <- mast_top$gene
-  ref_genes  <- full_ref_deg_genes_list
-  gene_universe <- intersect(mast_genes, ref_genes)
-  
-  sig_low_DEGs <- mast_top %>%
-    dplyr::filter(avg_log2FC > fc_cutoff, p_val_adj < fdr_cutoff) %>%
-    dplyr::pull(gene)
-  
-  reference_set_universe <- intersect(low_output_markers, gene_universe)
-  deg_set_universe       <- intersect(sig_low_DEGs, gene_universe)
-  
-  overlap_genes <- intersect(reference_set_universe, deg_set_universe)
-  
-  k <- length(overlap_genes)
-  m <- length(reference_set_universe)
-  q <- length(deg_set_universe)
-  N <- length(gene_universe)
-  
-  p_hyper <- stats::phyper(
-    q = k - 1,
-    m = m,
-    n = N - m,
-    k = q,
-    lower.tail = FALSE
-  )
-  
-  message(glue::glue("   • Overlap size: {k}"))
-  message(glue::glue("   • Hypergeometric P-value: {signif(p_hyper, 3)}"))
-  
-  venn_list_filtered <- list(
-    low_output_markers = reference_set_universe,
-    low_output_DEG     = deg_set_universe
-  )
-  
-  p_venn_filtered <- ggvenn::ggvenn(
-    venn_list_filtered,
-    fill_color = c("#4E9AC7", "#F79A63"),
-    text_size = 12,
-    stroke_size = 0.6,
-    show_percentage = FALSE
-  ) +
-    ggplot2::ggtitle(glue::glue("{sample_label}: Low Output — Universe-filtered")) +
-    ggplot2::theme(plot.title = ggplot2::element_text(size = 18, face = "bold", hjust = 0.5))
-  
-  ggplot2::ggsave(
-    file.path(sample_dir, glue::glue("{sample_label}_LowOutput_venn_filtered.pdf")),
-    p_venn_filtered,
-    width = 6.5,
-    height = 5.5
-  )
-  
-  message("Done: Filtered Venn diagram saved.\n")
-  
+
+  if (is.null(full_ref_deg_genes_list)) {
+
+    message("🔹 Step 5: Universe-filtered Venn skipped (full_ref_deg_genes_list is NULL).\n")
+
+  } else {
+
+    message("🔹 Step 5: Creating universe-filtered Venn diagram …")
+
+    mast_genes <- mast_top$gene
+    ref_genes  <- full_ref_deg_genes_list
+
+    gene_universe <- intersect(mast_genes, ref_genes)
+
+    if (length(gene_universe) == 0) {
+      message("   • No overlapping gene universe detected. Skipping Venn.\n")
+    } else {
+
+      sig_low_DEGs <- mast_top %>%
+        dplyr::filter(avg_log2FC > fc_cutoff, p_val_adj < fdr_cutoff) %>%
+        dplyr::pull(gene)
+
+      reference_set_universe <- intersect(low_output_markers, gene_universe)
+      deg_set_universe       <- intersect(sig_low_DEGs, gene_universe)
+
+      overlap_genes <- intersect(reference_set_universe, deg_set_universe)
+
+      k <- length(overlap_genes)
+      m <- length(reference_set_universe)
+      q <- length(deg_set_universe)
+      N <- length(gene_universe)
+
+      if (N > 0 && m > 0 && q > 0) {
+
+        p_hyper <- stats::phyper(
+          q = k - 1,
+          m = m,
+          n = N - m,
+          k = q,
+          lower.tail = FALSE
+        )
+
+        message(glue::glue("   • Overlap size: {k}"))
+        message(glue::glue("   • Hypergeometric P-value: {signif(p_hyper, 3)}"))
+
+      } else {
+        message("   • Insufficient genes for hypergeometric test.")
+        p_hyper <- NA
+      }
+
+      venn_list_filtered <- list(
+        low_output_markers = reference_set_universe,
+        low_output_DEG     = deg_set_universe
+      )
+
+      p_venn_filtered <- ggvenn::ggvenn(
+        venn_list_filtered,
+        fill_color = c("#4E9AC7", "#F79A63"),
+        text_size = 12,
+        stroke_size = 0.6,
+        show_percentage = FALSE
+      ) +
+        ggplot2::ggtitle(glue::glue("{sample_label}: Low Output — Universe-filtered")) +
+        ggplot2::theme(
+          plot.title = ggplot2::element_text(size = 18, face = "bold", hjust = 0.5)
+        )
+
+      ggplot2::ggsave(
+        file.path(sample_dir, glue::glue("{sample_label}_LowOutput_venn_filtered.pdf")),
+        p_venn_filtered,
+        width = 6.5,
+        height = 5.5
+      )
+
+      message("Done: Filtered Venn diagram saved.\n")
+    }
+  }
+
   # -----------------------------------------
   # 6. Contour UMAP
   # -----------------------------------------
   message("🔹 Step 6: Creating contour UMAP …")
-  
+
   meta_df <- seurat_obj@meta.data %>%
     dplyr::select(celltype) %>%
     cbind(
@@ -341,7 +377,7 @@ run_low_high_OA_analysis_for_a_single_sample <- function(
         as.data.frame() %>%
         stats::setNames(c("UMAP_1", "UMAP_2"))
     )
-  
+
   p_contour <- ggplot2::ggplot(meta_df, ggplot2::aes(UMAP_1, UMAP_2)) +
     ggrastr::rasterise(
       ggplot2::geom_point(
@@ -356,15 +392,15 @@ run_low_high_OA_analysis_for_a_single_sample <- function(
     ggplot2::coord_equal() +
     ggplot2::theme_void(base_size = 18) +
     ggplot2::ggtitle(glue::glue("{sample_label} — Contour UMAP"))
-  
+
   ggplot2::ggsave(
     filename = file.path(sample_dir, glue::glue("{sample_label}_contour_umap.pdf")),
     plot = p_contour,
     width = 9, height = 7, device = grDevices::cairo_pdf
   )
-  
+
   message("Done: Contour UMAP saved.\n")
-  
+
   # -----------------------------------------
   # 7. Save results object
   # -----------------------------------------
@@ -382,10 +418,10 @@ run_low_high_OA_analysis_for_a_single_sample <- function(
     plot_venn_filtered = p_venn_filtered,
     plot_contour = p_contour
   )
-  
+
   saveRDS(results, file = file.path(sample_dir, "results_object.rds"))
-  
+
   message(glue::glue("\n COMPLETE! All outputs saved to: {sample_dir}\n"))
-  
+
   return(results)
 }

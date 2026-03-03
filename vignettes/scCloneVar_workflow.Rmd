@@ -1,0 +1,331 @@
+---
+title: "scCloneVar Workflow"
+author: "Chris Chen"
+date: "`r Sys.Date()`"
+output:
+  rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{scCloneVar Workflow}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  warning = FALSE,
+  message = FALSE
+  #eval = FALSE
+)
+```
+
+<div style="font-size: 16px;">
+## Overview
+
+This vignette demonstrates a complete scCloneVar workflow using the included demo dataset (scCloneVar_test_demo).
+
+The analysis proceeds through the following stages:
+
+1. Clone size distribution profiling
+
+2. Output Activity (OA) analysis
+
+3. Clone-wise differential expression
+
+4. Transcriptional heterogeneity analysis (PCA-based distances)
+
+5. Differential variance (DVG) analysis
+
+6. GSEA on ranked heterogeneity statistics
+</div>
+
+## Load Package and Demo Data 
+
+```{r}
+library(scCloneVar)
+library(Seurat)
+
+data(scCloneVar_test_demo)
+
+seurat_obj <- scCloneVar_test_demo
+```
+
+
+```{r}
+seurat_obj
+```
+
+<div style="font-size: 16px;">
+
+## 1. Clone Size Distribution
+
+This step visualizes clone expansion patterns and computes descriptive statistics across samples.
+
+Clonal expansion is a fundamental property of hematopoietic dynamics, reflecting the proliferative fitness and competitive advantage of individual clones within a sample. Quantifying relative clone size allows comparison across replicates and conditions while controlling for differences in total cell number.
+
+
+For each replicate, relative clone frequency is defined as:
+
+Relative clone frequency is calculated as  
+</div>
+
+<div style="font-size: 20px;">
+
+<br>
+
+$$
+\mathrm{RelFreq} =
+\frac{\text{cells in clone}}{\text{total cells in replicate}}
+$$
+
+<br>
+
+</div>
+
+<div style="font-size: 16px;">
+Clones below a user-defined frequency threshold are grouped as Other, enabling clearer visualization of dominant expansions.
+</div>
+
+```{r,fig.width=4, fig.height=2.5, out.width="70%", dpi=300}
+comparison_list <- list(
+  list(seurat_obj = seurat_obj,samples = grep("^Y_vitro", unique(seurat_obj$sampleName), value = TRUE),label_counts = data.frame(
+      Sample = grep("^Y_vitro", unique(seurat_obj$sampleName), value = TRUE),
+      Replicate = unique(seurat_obj$Rep[grepl("^Y_vitro", seurat_obj$sampleName)]),
+      SampleLabel = grep("^Y_vitro", unique(seurat_obj$sampleName), value = TRUE)),
+    threshold = 0.05,
+    title = "Relative Clone Size Distribution: Y_vitro",
+    name = "Y_vitro"),
+  list(
+    seurat_obj = seurat_obj,
+    samples = grep("^O_vitro", unique(seurat_obj$sampleName), value = TRUE),
+    label_counts = data.frame(
+      Sample = grep("^O_vitro", unique(seurat_obj$sampleName), value = TRUE),
+      Replicate = unique(seurat_obj$Rep[grepl("^O_vitro", seurat_obj$sampleName)]),
+      SampleLabel = grep("^O_vitro", unique(seurat_obj$sampleName), value = TRUE)),
+    threshold = 0.05,
+    title = "Relative Clone Size Distribution: O_vitro",
+    name = "O_vitro"))
+
+dist_out <- run_clone_distribution_engine(comparison_list)
+
+dist_out$plots$Y_vitro
+dist_out$plots$O_vitro
+```
+<div style="font-size: 16px;">
+Relative clonal size summary table is also provided:
+</div>
+```{r}
+dist_out$descriptive_stats$Y_vitro
+```
+<div style="font-size: 16px;">
+## 2. Output Activity (OA) Analysis
+
+This step quantifies clone-level output bias and classifies clones into low and high output groups.
+
+Output Activity (OA) measures the differentiation bias of each clone by comparing its contribution to non-HSC versus HSC compartments. Following the conceptual framework described by Singh et al., Cell Stem Cell (2025) https://www.cell.com/cell-stem-cell/fulltext/S1934-5909(25)00012-8, OA reflects the functional output potential of a clone — that is, whether a clone preferentially produces differentiated progeny or remains stem-biased. In this implementation, OA is computed as the relative enrichment of non-HSC output normalized to HSC contribution within each clone.
+
+
+For a given clone $c$, Output Activity is defined as:
+
+$$
+\mathrm{OA}_c = 
+\frac{\mathrm{nonHSC\_freq}_c + \epsilon}
+     {\mathrm{HSC\_freq}_c + \epsilon}
+$$
+
+where
+
+$$
+\mathrm{HSC\_freq}_c = 
+\frac{N^{\mathrm{HSC}}_c}
+     {N^{\mathrm{HSC}}_c + N^{\mathrm{nonHSC}}_c}
+$$
+
+$$
+\mathrm{nonHSC\_freq}_c = 
+\frac{N^{\mathrm{nonHSC}}_c}
+     {N^{\mathrm{HSC}}_c + N^{\mathrm{nonHSC}}_c}
+$$
+
+and
+
+$$
+\epsilon = 10^{-6}
+$$
+
+
+Higher OA values indicate clones with greater differentiation output potential, whereas lower OA values represent stem-biased clones.
+
+### Required Inputs
+
+The function requires a Seurat object containing:
+-A UMAP reduction named "umap",
+-Metadata columns specifying celltype and clone identity (default "CloneID"),
+-Defined HSC cell types (default: LT-HSC, ST-HSC).
+-Optional arguments allow specification of non-HSC cell types, DEG cell subsets, reference marker lists, color mappings, and statistical thresholds.
+</div>
+
+```{r}
+# Define low and high output marker 
+
+low_output_markers <- c(
+  "Mpl","Ifitm3","Ifitm1","Tgm2","H2-K1","Socs2","Mycn","Nupr1","Hacd4",
+  "Mllt3","Gda","B2m","Procr","Txnip","Clu","Sult1a1","S100a6","Rpl36a",
+  "Tsc22d1","Gng11","Ccnd2","mt-Co3","Tmem176b","Lmo2","Ly6a","Mmrn1",
+  "Trim47","St3gal1","Mecom","Pik3r1","Adgrg1","Esam","Ryk","Rps21","Hoxb8",
+  "Ccnd1","Uba7","Rps28","Serpina3g","Rpl37a","Fkbp1a","Pdzk1ip1","Selp",
+  "Eif4a2","Tmem176a","Bex4","Grb10","Jam3","Ptk2b","Gimap8","Csgalnact1",
+  "H2-Q7","App","Mylk","Casp12","Rhof","Laptm4a","Tcf15","Gabarapl1","Ctsl",
+  "Bex1","Rpl21","D630039A03Rik","Myof","Glul","Ppic","Tpt1","Rpl5","Cdkn1c",
+  "mt-Nd5","Abcg3","Aplp2","Art4","Tbxas1","Cish","Vwf","Scarf1","mt-Atp6",
+  "H2-Eb1","H2-D1","Cd74","Iigp1","Aldh1a1","Gstm1","mt-Nd4","mt-Cytb","mt-Co1"
+)
+high_output_markers <- c(
+  "Plac8","H2afy","Cdk6","Cd34","Nkg7","Ptma","Mpo","Cd48","Stmn1","Fam117a",
+  "Slc22a3","Adgrg3","Ppia","Car1","Ctsg","Flt3","Lgals1","Muc4","Gpx1",
+  "Hmgb2","Ndufa4","Serpinb1a","Ccl9","Oaz1","H2afz","Crip1","Mcm7","Cpa3",
+  "Vim","Ybx1","Sell","Sh3bgrl3","H3f3a","Dut","Atpif1","Ran","Hnrnpa2b1",
+  "Hdgf","Mcm4","Elane","Rabgap1l","Cmtm7","Rpsa","Mcm6","Plek","Set","Atp5g3",
+  "Myc","Taldo1","Tuba1b","Cks2","Slc25a5","Fam65a","Cebpa","Tmsb10","Cd52",
+  "Klf1","Anp32b","Hn1","Parvg","Ffar2","Bex6","Emilin2","Itgal","Cox5a",
+  "Hnrnpab","Ighm","BC035044","Lmnb1","Golm1","Bin1","Igfbp4","Tyrobp","E2f8",
+  "Banf1","Cst7","Sh2d5","Aqp1","Ptbp3","Snrpf","Rfc2","Ramp1","Hmgn5","Nme1"
+)
+
+
+```
+
+
+```{r, warning=FALSE}
+## Define celltype colors manually ##
+celltype_colors <- c(
+  ## HSCs 
+  "LT-HSC" = "#E76F51",
+  "ST-HSC" = "#F4A261",
+  ## Early progenitors 
+  "MPP"  = "#5BC374",
+  "MPP3" = "#4CAF50",
+  "MPP4" = "#66CDAA",
+  "CMP"  = "#C49A6C",
+  "EryP" = "#F28E2B",
+  "LMPP" = "#4DB6AC",
+  ## Myeloid differentiation
+  "GMP"   = "#1FA187",
+  "GMP-3" = "#2BBBAD",
+  "MDP"   = "#7C9A3D",
+  "Granulocyte" = "#6C8EBF",
+  ## Megakaryocyte / Platelet
+  "MkP"   = "#5FBAC8",
+  "MKP"   = "#4DA8B5",
+  "MKP-1" = "#78C2D0",
+  ## Erythroid / Megakaryocyte
+  "MEP"     = "#8C973E",
+  "MEP-1"   = "#7A8735",
+  "MEP-2"   = "#9AAE4C",
+  "MEP/EryP"= "#A4B95A",
+  ## Mast / Basophil 
+  "Ba/mast"   = "#C77DFF",
+  "Mast-cell" = "#B565D9",
+  ## Immune / Other 
+  "DC"  = "#9E6E4A",
+  "Mac" = "#7F5539",
+  "Mast-Cells" = "#D98BB8",
+  ## T cell 
+  "T-cells" = "#6CA3D1",
+  "T-cell"  = "#4F8AC9",
+  "T-Cell"  = "#83B8E6",
+  ## Undefined
+  "UN" = "grey65")
+
+## Run OA function ##
+
+oa_out <- run_low_high_OA_analysis_for_a_single_sample(seurat_obj = seurat_obj,
+  sample_label = "DemoSample",celltype_colors = celltype_colors,low_output_markers = low_output_markers,
+  high_output_markers = high_output_markers, full_ref_deg_genes_list = NULL)
+
+```
+
+<div style="font-size: 16px;">
+### Expected Outputs
+
+The function returns a structured results object (also saved to disk) containing:
+-Per-clone OA values and low/high classifications,
+-Cell-level OA annotations,
+-Clone-wise DEG results (via run_clonewise_DEG_suite()),
+-UMAP visualizations (cell type, OA gradient, contour),
+-Volcano plots and universe-restricted enrichment tests,
+-A complete RDS object consolidating tables and plots.
+</div>
+
+
+## 3. Clone-wise Differential Expression
+
+Differential expression analysis between low and high OA clones.
+
+```{r,eval=FALSE}
+
+deg_out <- run_clonewise_DEG_suite(
+  seurat_obj = seurat_obj,
+  clone_set1_ids = oa_out$low_clones,
+  clone_set2_ids = oa_out$high_clones
+)
+
+deg_out$volcano_plot
+
+```
+
+## 4. PCA-Based Clone Heterogeneity
+
+Quantifies intra- and inter-clonal transcriptional distances in PCA space.
+
+```{r,eval=FALSE}
+
+het_out <- compute_pca_clone_heterogeneity(
+  seurat_obj = seurat_obj
+)
+
+head(het_out$clone_level_stats)
+```
+
+## 5. Differential Variance and CV Analysis
+
+Identifies Differential Variance Genes (DVGs) across groups.
+
+```{r,eval=FALSE}
+
+dvg_out <- compute_variance_and_cv(
+  seurat_obj = seurat_obj,
+  group_var = "donor_age"
+)
+
+head(dvg_out$results)
+
+```
+
+## 6. Visualization of Heterogeneity Patterns
+
+```{r,eval=FALSE}
+
+plot_variance_cv_summaries(dvg_out$results)
+
+```
+
+
+## 7. GSEA Across MSigDB Collections
+
+Performs enrichment analysis on ranked heterogeneity statistics.
+
+```{r,eval=FALSE}
+
+gsea_out <- run_msigdb_gsea_all_collections(
+  hsc_results = dvg_out$results,
+  rank_var = "mean_adjusted_var"
+)
+
+head(gsea_out$H)
+
+```
+
+
+

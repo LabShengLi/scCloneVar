@@ -42,7 +42,10 @@ Imports:
     utils
 Suggests:
     testthat,
-    pkgdown
+    pkgdown,
+    knitr,
+    rmarkdown
 Depends: 
     R (>= 3.5)
 LazyData: true
+VignetteBuilder: knitr
