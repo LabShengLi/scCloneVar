@@ -2,7 +2,7 @@
 % Please edit documentation in R/run_clonewise_DEG_suite.R
 \name{run_clonewise_DEG_suite}
 \alias{run_clonewise_DEG_suite}
-\title{Run clone-wise differential expression suite (multiple gene universes × methods)}
+\title{Run clone-wise differential expression suite}
 \usage{
 run_clonewise_DEG_suite(
   seurat_obj,
@@ -30,44 +30,37 @@ run_clonewise_DEG_suite(
 
 \item{clone_set2_ids}{Vector of clone IDs for Group2.}
 
-\item{clone_col}{Metadata column name storing clone IDs. Default "CloneID".}
+\item{clone_col}{Metadata column name storing clone IDs.}
 
-\item{assay_name}{Assay to use. Default "RNA".}
+\item{assay_name}{Assay to use.}
 
-\item{top_hvgs}{Number of HVGs to compute. Default 2000.}
+\item{top_hvgs}{Number of HVGs.}
 
-\item{min_detect_prop}{Minimum detection proportion (on normalized data). Default 0.10.}
+\item{min_detect_prop}{Minimum detection proportion.}
 
-\item{min_mean_norm}{Minimum mean normalized expression. Default 0.10.}
+\item{min_mean_norm}{Minimum mean normalized expression.}
 
-\item{min_mean_raw}{Minimum mean raw counts. Default 2.}
+\item{min_mean_raw}{Minimum mean raw counts.}
 
-\item{excel_name}{Excel output file name. Default "Clonewise_DEG.xlsx".}
+\item{excel_name}{Excel output file name.}
 
-\item{volcano_name}{Volcano plot file name. Default "Volcano_MAST_TopHVGs.png".}
+\item{volcano_name}{Volcano plot file name.}
 
-\item{group1_label}{Label for Group1 in messages/paths. Default "Low_OA".}
+\item{group1_label}{Label for Group1.}
 
-\item{group2_label}{Label for Group2 in messages/paths. Default "High_OA".}
+\item{group2_label}{Label for Group2.}
 
-\item{fc_cutoff}{log2FC cutoff for calling up/down in summary/volcano. Default 0.25.}
+\item{fc_cutoff}{log2FC cutoff.}
 
-\item{fdr_cutoff}{Adjusted p-value cutoff. Default 0.05.}
+\item{fdr_cutoff}{Adjusted p-value cutoff.}
 
-\item{output_dir}{Base output directory. Default "Clonewise_DEG_Results".}
+\item{output_dir}{Output directory.}
 }
 \value{
-(invisibly) A list with:
-\describe{
-\item{summary}{Summary tibble of runs.}
-\item{results}{Named list of DEG result tibbles.}
-\item{volcano_plot}{ggplot object (or NULL).}
-\item{folder}{Output folder path for this run.}
-}
+Invisible list containing summary, results, volcano plot, and folder path.
 }
 \description{
 Runs clone-wise DEG between two clone sets using multiple gene universes
-(all genes, top HVGs, filtered HVGs) and multiple DEG methods (wilcox, MAST),
-saves an Excel workbook (summary + per-result tabs), and optionally saves a
-volcano plot for MAST on Top HVGs.
+(all genes, top HVGs, filtered HVGs) and multiple DEG methods (wilcox, MAST).
+Saves an Excel workbook (summary + per-result tabs) and optionally a volcano plot.
 }
