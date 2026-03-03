@@ -1,0 +1,46 @@
+Package: scCloneVar
+Type: Package
+Title: Clonal Variance and Heterogeneity Analysis for Single-Cell Data
+Version: 0.0.1
+Authors@R: 
+    person("Xunxuan", "Chen", 
+           email = "xunxuanc@usc.edu", 
+           role = c("aut", "cre"))
+Description: 
+    scCloneVar provides tools for clonal tracing analysis in single-cell 
+    transcriptomics data, including output activity scoring, clone-wise 
+    differential expression, variance modeling, PCA-based heterogeneity 
+    quantification, and MSigDB-based enrichment analysis.
+License: MIT + file LICENSE
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.3
+Imports:
+    Seurat,
+    dplyr,
+    tidyr,
+    ggplot2,
+    purrr,
+    Matrix,
+    progress,
+    progressr,
+    patchwork,
+    ggrepel,
+    ggvenn,
+    ggsignif,
+    ggplotify,
+    msigdbr,
+    clusterProfiler,
+    enrichplot,
+    org.Mm.eg.db,
+    stringr,
+    scales,
+    openxlsx,
+    tibble,
+    magrittr,
+    stats,
+    utils
+Suggests:
+    testthat,
+    pkgdown
+
