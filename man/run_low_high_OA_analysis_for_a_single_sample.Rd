@@ -9,6 +9,7 @@ run_low_high_OA_analysis_for_a_single_sample(
   sample_label = "Sample",
   output_dir = "OA_Analysis",
   clone_col = "CloneID",
+  umap_reduction = "umap",
   HSC_types = c("LT-HSC", "ST-HSC"),
   nonHSC_types = NULL,
   deg_celltypes = c("LT-HSC", "ST-HSC", "MPP"),

@@ -197,7 +197,7 @@ high_output_markers <- c(
 ```
 
 
-```{r, warning=FALSE}
+```{r, warning=FALSE, eval=FALSE}
 ## Define celltype colors manually ##
 celltype_colors <- c(
   ## HSCs 
