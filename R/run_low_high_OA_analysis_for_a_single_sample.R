@@ -291,6 +291,7 @@ run_low_high_OA_analysis_for_a_single_sample <- function(
   if (is.null(full_ref_deg_genes_list)) {
 
     message("🔹 Step 5: Universe-filtered Venn skipped (full_ref_deg_genes_list is NULL).\n")
+    p_venn_filtered <- NULL
 
   } else {
 
@@ -302,7 +303,10 @@ run_low_high_OA_analysis_for_a_single_sample <- function(
     gene_universe <- intersect(mast_genes, ref_genes)
 
     if (length(gene_universe) == 0) {
+
       message("   • No overlapping gene universe detected. Skipping Venn.\n")
+      p_venn_filtered <- NULL
+
     } else {
 
       sig_low_DEGs <- mast_top %>%
@@ -364,42 +368,40 @@ run_low_high_OA_analysis_for_a_single_sample <- function(
       message("Done: Filtered Venn diagram saved.\n")
     }
   }
+    # -----------------------------------------
+    # 6. Contour UMAP  (CRASH-SAFE VERSION)
+    # -----------------------------------------
+    message("🔹 Step 6: Creating contour UMAP …")
 
-  # -----------------------------------------
-  # 6. Contour UMAP
-  # -----------------------------------------
-  message("🔹 Step 6: Creating contour UMAP …")
+    meta_df <- seurat_obj@meta.data %>%
+      dplyr::select(celltype) %>%
+      cbind(
+        Seurat::Embeddings(seurat_obj, umap_reduction) %>%
+          as.data.frame() %>%
+          stats::setNames(c("UMAP_1", "UMAP_2"))
+      )
 
-  meta_df <- seurat_obj@meta.data %>%
-    dplyr::select(celltype) %>%
-    cbind(
-      Seurat::Embeddings(seurat_obj, "umap") %>%
-        as.data.frame() %>%
-        stats::setNames(c("UMAP_1", "UMAP_2"))
+    p_contour <- ggplot2::ggplot(meta_df, ggplot2::aes(UMAP_1, UMAP_2)) +
+      ggplot2::geom_point(
+        ggplot2::aes(color = celltype),
+        size = 1.2,
+        alpha = 0.8
+      ) +
+      ggplot2::geom_density_2d(color = "black", linewidth = 0.6) +
+      ggplot2::scale_color_manual(values = celltype_colors) +
+      ggplot2::coord_equal() +
+      ggplot2::theme_void(base_size = 18) +
+      ggplot2::ggtitle(glue::glue("{sample_label} — Contour UMAP"))
+
+    ggplot2::ggsave(
+      filename = file.path(sample_dir, glue::glue("{sample_label}_contour_umap.pdf")),
+      plot = p_contour,
+      width = 9,
+      height = 7,
+      device = "pdf"   # ← IMPORTANT: NOT cairo_pdf
     )
 
-  p_contour <- ggplot2::ggplot(meta_df, ggplot2::aes(UMAP_1, UMAP_2)) +
-    ggrastr::rasterise(
-      ggplot2::geom_point(
-        ggplot2::aes(fill = celltype),
-        shape = 21, color = "black",
-        size = 1.2, stroke = 0.15, alpha = 0.8
-      ),
-      dpi = 300
-    ) +
-    ggplot2::geom_density_2d(color = "black", linewidth = 0.6) +
-    ggplot2::scale_fill_manual(values = celltype_colors) +
-    ggplot2::coord_equal() +
-    ggplot2::theme_void(base_size = 18) +
-    ggplot2::ggtitle(glue::glue("{sample_label} — Contour UMAP"))
-
-  ggplot2::ggsave(
-    filename = file.path(sample_dir, glue::glue("{sample_label}_contour_umap.pdf")),
-    plot = p_contour,
-    width = 9, height = 7, device = grDevices::cairo_pdf
-  )
-
-  message("Done: Contour UMAP saved.\n")
+    message("Done: Contour UMAP saved.\n")
 
   # -----------------------------------------
   # 7. Save results object

@@ -3,7 +3,11 @@ title: "scCloneVar Workflow"
 author: "Chris Chen"
 date: "`r Sys.Date()`"
 output:
-  rmarkdown::html_vignette
+  rmarkdown::html_document:
+    self_contained: true
+    toc: true
+    toc_depth: 3
+    df_print: paged
 vignette: >
   %\VignetteIndexEntry{scCloneVar Workflow}
   %\VignetteEngine{knitr::rmarkdown}
@@ -20,10 +24,11 @@ knitr::opts_chunk$set(
 )
 ```
 
-<div style="font-size: 16px;">
-## Overview
 
-This vignette demonstrates a complete scCloneVar workflow using the included demo dataset (scCloneVar_test_demo).
+# Overview
+
+<div style="font-size: 16px;">
+This vignette demonstrates a complete **scCloneVar workflow** using the included demo dataset (scCloneVar_test_demo).
 
 The analysis proceeds through the following stages:
 
@@ -43,8 +48,8 @@ The analysis proceeds through the following stages:
 ## Load Package and Demo Data 
 
 ```{r}
-library(scCloneVar)
-library(Seurat)
+suppressPackageStartupMessages({library(scCloneVar)
+  library(Seurat)})
 
 data(scCloneVar_test_demo)
 
@@ -56,10 +61,9 @@ seurat_obj <- scCloneVar_test_demo
 seurat_obj
 ```
 
+# Clone Size Distribution
+
 <div style="font-size: 16px;">
-
-## 1. Clone Size Distribution
-
 This step visualizes clone expansion patterns and computes descriptive statistics across samples.
 
 Clonal expansion is a fundamental property of hematopoietic dynamics, reflecting the proliferative fitness and competitive advantage of individual clones within a sample. Quantifying relative clone size allows comparison across replicates and conditions while controlling for differences in total cell number.
@@ -118,13 +122,14 @@ Relative clonal size summary table is also provided:
 ```{r}
 dist_out$descriptive_stats$Y_vitro
 ```
-<div style="font-size: 16px;">
-## 2. Output Activity (OA) Analysis
 
+# Output Activity (OA) Analysis
+
+<div style="font-size: 16px;">
 This step quantifies clone-level output bias and classifies clones into low and high output groups.
 
 Output Activity (OA) measures the differentiation bias of each clone by comparing its contribution to non-HSC versus HSC compartments. Following the conceptual framework described by Singh et al., Cell Stem Cell (2025) https://www.cell.com/cell-stem-cell/fulltext/S1934-5909(25)00012-8, OA reflects the functional output potential of a clone — that is, whether a clone preferentially produces differentiated progeny or remains stem-biased. In this implementation, OA is computed as the relative enrichment of non-HSC output normalized to HSC contribution within each clone.
-
+</div>
 
 For a given clone $c$, Output Activity is defined as:
 
@@ -154,16 +159,18 @@ $$
 \epsilon = 10^{-6}
 $$
 
-
+<div style="font-size: 16px;">
 Higher OA values indicate clones with greater differentiation output potential, whereas lower OA values represent stem-biased clones.
+</div>
 
-### Required Inputs
+## Required Inputs
 
+<div style="font-size: 16px;">
 The function requires a Seurat object containing:
--A UMAP reduction named "umap",
--Metadata columns specifying celltype and clone identity (default "CloneID"),
--Defined HSC cell types (default: LT-HSC, ST-HSC).
--Optional arguments allow specification of non-HSC cell types, DEG cell subsets, reference marker lists, color mappings, and statistical thresholds.
+- A UMAP reduction named "umap",
+- Metadata columns specifying celltype and clone identity (default "CloneID"),
+- Defined HSC cell types (default: LT-HSC, ST-HSC).
+- Optional arguments allow specification of non-HSC cell types, DEG cell subsets, reference marker lists, color mappings, and statistical thresholds.
 </div>
 
 ```{r}
@@ -192,12 +199,13 @@ high_output_markers <- c(
   "Hnrnpab","Ighm","BC035044","Lmnb1","Golm1","Bin1","Igfbp4","Tyrobp","E2f8",
   "Banf1","Cst7","Sh2d5","Aqp1","Ptbp3","Snrpf","Rfc2","Ramp1","Hmgn5","Nme1"
 )
-
+# Can be set to NULL if no comparison needed, for simplicity we show a few genes here
+ref_deg_genes_list <- c("Olfm3","Scin","Tox","Pbx3","Mecom","Fry","Slc24a3","Pcdh7" )
 
 ```
 
 
-```{r, warning=FALSE, eval=FALSE}
+```{r, warning=FALSE}
 ## Define celltype colors manually ##
 celltype_colors <- c(
   ## HSCs 
@@ -242,90 +250,379 @@ celltype_colors <- c(
 
 oa_out <- run_low_high_OA_analysis_for_a_single_sample(seurat_obj = seurat_obj,
   sample_label = "DemoSample",celltype_colors = celltype_colors,low_output_markers = low_output_markers,
-  high_output_markers = high_output_markers, full_ref_deg_genes_list = NULL)
+  high_output_markers = high_output_markers, full_ref_deg_genes_list = ref_deg_genes_list,
+  umap_reduction = 'umap')
+
+```
+
+## Expected Outputs
+
+<div style="font-size: 16px;">
+The function returns a structured results object (also saved to disk) containing:
+- Per-clone OA values and low/high classifications
+- Cell-level OA annotations
+</div>
+
+```{r}
+head(oa_out$OA_by_clone) # Clone-level OA values 
+head(oa_out$OA_by_cell)  # Cell-level OA values 
+```
+<div style="font-size: 16px;">
+-Clone-wise DEG results (via run_clonewise_DEG_suite())
+</div>
+
+```{r,fig.width=6, fig.height=3.5, out.width="80%", dpi=300}
+
+oa_out$DEG_results$volcano_plot
+
+```
+<div style="font-size: 16px;">
+-UMAP visualizations (cell type, OA gradient, contour)
+</div>
+
+```{r,fig.width=6, fig.height=3.5, out.width="80%", dpi=300}
+
+oa_out$plot_dim
 
 ```
 
 <div style="font-size: 16px;">
-### Expected Outputs
+-Universe-restricted enrichment tests
+</div>
 
-The function returns a structured results object (also saved to disk) containing:
--Per-clone OA values and low/high classifications,
--Cell-level OA annotations,
--Clone-wise DEG results (via run_clonewise_DEG_suite()),
--UMAP visualizations (cell type, OA gradient, contour),
--Volcano plots and universe-restricted enrichment tests,
+```{r,fig.width=6.5, fig.height=4, out.width="80%", dpi=300}
+
+oa_out$plot_venn_filtered
+
+```
+<div style="font-size: 16px;">
+Density across celltypes 
+</div>
+
+```{r,fig.width=6, fig.height=3.5, out.width="80%", dpi=300}
+
+oa_out$plot_contour
+
+```
+<div style="font-size: 16px;">
 -A complete RDS object consolidating tables and plots.
 </div>
 
 
-## 3. Clone-wise Differential Expression
+# Clone-wise Differential Expression
 
+<div style="font-size: 16px;">
 Differential expression analysis between low and high OA clones.
 
-```{r,eval=FALSE}
+We next perform clone-wise differential expression analysis by directly comparing cells derived from low-output (stem-biased) versus high-output (differentiation-biased) clones. This design tests whether transcriptional programs differ as a function of clonal output activity and linking functional clone behavior to gene expression changes.
+</div>
+
+```{r,warning=FALSE}
 
 deg_out <- run_clonewise_DEG_suite(
-  seurat_obj = seurat_obj,
-  clone_set1_ids = oa_out$low_clones,
-  clone_set2_ids = oa_out$high_clones
-)
+  seurat_obj = seurat_obj, clone_set1_ids = oa_out$low_clones, clone_set2_ids = oa_out$high_clones,
+  clone_col = "CloneID", assay_name  = "RNA", top_hvgs  = 2000, min_detect_prop = 0.10,
+  min_mean_norm = 0.10, min_mean_raw = 2, fc_cutoff  = 0.25, fdr_cutoff = 0.05,)
+
+```
+
+### Volcano Plots (clone-wise DEGs)
+```{r, fig.width=6.5, fig.height=4, out.width="80%", dpi=300}
 
 deg_out$volcano_plot
 
 ```
 
-## 4. PCA-Based Clone Heterogeneity
+# PCA-Based Clone Heterogeneity
 
+<div style="font-size: 16px;">
 Quantifies intra- and inter-clonal transcriptional distances in PCA space.
 
-```{r,eval=FALSE}
+Intra-clonal distance 
+
+We first embed all cells into PCA space (top n PCs). For each clone, we compute its clone centroid as the mean PC coordinate vector across cells in that clone, then quantify intra-clonal heterogeneity as the average Euclidean distance from each cell to its own clone centroid (i.e., within-clone dispersion).
+
+Inter-clonal distance
+
+To quantify inter-clonal heterogeneity, we compute (for each clone A) the average Euclidean distance from cells in clone A to the centroid of every other clone B, and then take the mean across B to obtain a per-clone mean inter-clone distance (i.e., how far a clone sits from other clones in transcriptional PC space).
+</div>
+```{r,eval=TRUE}
 
 het_out <- compute_pca_clone_heterogeneity(
-  seurat_obj = seurat_obj
-)
+    seu = seurat_obj,celltype_keep = c("LT-HSC", "ST-HSC"),
+    clone_col = "CloneID", sample_col = "sampleName", assay = "RNA",
+    n_pcs = 30, min_pct = 0.1, min_mean = 0.1, min_cells = 2, group_recode = NULL,
+    sample_order = c("Y_vitro", "O_vitro"), prefix = "Clone Heterogeneity")
 
-head(het_out$clone_level_stats)
+```
+<div style="font-size: 16px;">
+Summary table for intra and inter-clonal PCA distance
+</div>
+```{r}
+
+head(het_out$summary)
+
 ```
 
-## 5. Differential Variance and CV Analysis
+<div style="font-size: 16px;">
+Within and between group statistical test
+</div>
 
+```{r}
+
+print(het_out$within_group_tests)
+print(het_out$between_group_tests)
+
+```
+
+<div style="font-size: 16px;">
+Intra and inter-clonal PCA distance violin plot
+</div>
+
+```{r,fig.width=7, fig.height=5, out.width="70%", dpi=300}
+
+het_out$plot
+
+```
+
+# Differential Variance and CV Analysis
+
+<div style="font-size: 16px;">
 Identifies Differential Variance Genes (DVGs) across groups.
 
-```{r,eval=FALSE}
+Beyond clone-level heterogeneity, it is often informative to examine transcriptional heterogeneity at the gene level. Variability analysis can reveal regulatory instability, transcriptional noise, or lineage priming effects that are not detectable through mean expression analysis alone.
+
+To quantify transcriptional heterogeneity, the function compute_variance_and_cv() identifies Differential Variability Genes (DVGs) between two biological groups. This function performs several complementary analyses:
+
+- Variance difference tests
+
+- Mean-adjusted variance estimation
+
+- Coefficient of variation (CV) comparison
+
+The workflow implemented here follows the statistical framework described by Eling et al. (2018) (https://www.cell.com/cell-systems/fulltext/S2405-4712(18)30278-3?_returnURL=https%3A%2F%2Flinkinghub.elsevier.com%2Fretrieve%2Fpii%2FS2405471218302783%3Fshowall%3Dtrue), which accounts for the dependency between gene expression mean and variance. This is critical because highly expressed genes naturally tend to exhibit larger variance.
+
+For each gene, we first test whether expression variance differs between groups using three classical tests:
+</div>
+
+## Brown–Forsythe Test
+
+<div style="font-size: 16px;">
+The Brown–Forsythe test evaluates whether variance differs between groups by computing deviations from the **group median**.
+
+Group median:
+
+$$
+\tilde{x}_j = \text{median}(x_{1j}, x_{2j}, \ldots, x_{n_j j})
+$$
+Absolute deviations from the group median:
+
+$$
+z_{ij} = |x_{ij} - \tilde{x}_j|
+$$
+
+The ANOVA test statistic is:
+
+$$
+F =
+\frac{
+(N-k)\sum_{j=1}^{k} n_j (\bar{z}_j - \bar{z})^2
+}{
+(k-1)\sum_{j=1}^{k}\sum_{i=1}^{n_j}(z_{ij}-\bar{z}_j)^2
+}
+$$
+
+where
+
+$$
+\bar{z}_j =
+\frac{1}{n_j}\sum_{i=1}^{n_j} z_{ij}
+$$
+
+$$
+\bar{z} =
+\frac{1}{N}\sum_{j=1}^{k}\sum_{i=1}^{n_j} z_{ij}
+$$
+
+Before mean-adjusted variance correction:
+</div>
+```{r,fig.align="center", out.width="70%"}
+
+knitr::include_graphics("Figures/Mean_expr_var_raw.png")
+
+```
+<div style="font-size: 16px;">
+After mean-adjusted variance correction:
+</div>
+```{r,fig.align="center", out.width="70%"}
+
+knitr::include_graphics("Figures/Mean_expr_var_adjusted.png")
+
+```
+
+<div style="font-size: 16px;">
+Technical or unrelated genes could add noise to the variance analysis, therefore we will filter out mitochondrial, ribosomal genes before we compute the per-gene variance
+</div>
+
+```{r,warning=FALSE}
+all_genes <- rownames(seurat_obj)
+# For Mouse 
+genes_filtered <- all_genes[!grepl("^mt-", all_genes, ignore.case = TRUE) &
+  !grepl("^Rps", all_genes) & !grepl("^Rpl", all_genes) &
+  !grepl("^Hist", all_genes) &!grepl("^Gm[0-9]", all_genes) &
+  !grepl("Rik$", all_genes)]
+
+# For Human
+#genes_filtered <- all_genes[!grepl("^MT-", all_genes, ignore.case = TRUE) &
+#  !grepl("^RPS", all_genes) & !grepl("^RPL", all_genes) &
+#  !grepl("^HIST", all_genes) & !grepl("^GM[0-9]", all_genes) &
+#  !grepl("RIK$", all_genes)]
+
+seurat_clean <- subset(seurat_obj, features = genes_filtered)
+
+```
+
+<div style="font-size: 16px;">
+compute_variance_and_cv() returns a per-gene heterogeneity assessment table
+Here we will be using the top 2000 high variable genes identified from seurat and perform all 3 tests (brown_forsythe, levene and bartlett) 
+</div>
+
+```{r,eval=TRUE,warning=FALSE}
 
 dvg_out <- compute_variance_and_cv(
-  seurat_obj = seurat_obj,
-  group_var = "donor_age"
-)
-
-head(dvg_out$results)
+  seu = seurat_obj, slot = "data", group_col = "donor_age", n_hvg = 2000,
+  selection.method = "vst", n_cores = 1, chunk_size = 250, tests = c("brown_forsythe", "levene", "bartlett"),
+  min_pct = 0.1, min_mean = 0.1)
 
 ```
 
-## 6. Visualization of Heterogeneity Patterns
+<div style="font-size: 16px;">
+Check the output tables
+</div>
 
-```{r,eval=FALSE}
+```{r}
 
-plot_variance_cv_summaries(dvg_out$results)
+head(dvg_out)
+
+```
+
+# Visualization of Heterogeneity Patterns
+
+<div style="font-size: 16px;">
+After computing differential variability statistics using compute_variance_and_cv(), the function plot_variance_cv_summaries() provides a comprehensive visualization suite for exploring heterogeneity patterns across biological groups.
+</div>
+
+```{r,eval=TRUE,warning=FALSE}
+
+dvg_plots <- plot_variance_cv_summaries(dvg_out)
+
+```
+
+<div style="font-size: 16px;">
+First it returns a global summary table showing the difference of global transcriptional heterogeneity between the two groups (eg: Young vs Old (g1 and g2 are based on the factor level of the group_col = "donor_age"))
+</div>
+
+```{r}
+dvg_plots$summary_counts
+```
+
+<div style="font-size: 16px;">
+Boxplot for mean-adjusted variance 
+</div>
+
+```{r,fig.align="center",fig.width=6, fig.height=4, out.width="80%", dpi=300}
+
+dvg_plots$mean_adj_var_box
+
+```
+
+<div style="font-size: 16px;">
+Global density plot showing the distribution of the variance between the two groups
+</div>
+
+```{r,fig.align="center",fig.width=6, fig.height=4, out.width="80%", dpi=300}
+
+dvg_plots$density_mean_adj
+
+```
+
+<div style="font-size: 16px;">
+Volcano plot for differential variable genes (DVGs) 
+</div>
+
+```{r,fig.align="center",fig.width=6, fig.height=4, out.width="80%", dpi=300}
+
+dvg_plots$volcano_mean_adj
 
 ```
 
 
-## 7. GSEA Across MSigDB Collections
+# GSEA Across MSigDB Collections
 
+<div style="font-size: 16px;">
 Performs enrichment analysis on ranked heterogeneity statistics.
 
-```{r,eval=FALSE}
+Differential variability analysis identifies genes whose expression variability differs between biological conditions. However, gene-level results can be difficult to interpret biologically.
+
+To address this, we perform Gene Set Enrichment Analysis (GSEA) using the ranked heterogeneity statistics to identify pathways whose genes collectively show increased or decreased transcriptional variability.
+
+The function run_msigdb_gsea_all_collections() performs GSEA across multiple MSigDB gene set collections, enabling pathway-level interpretation of transcriptional heterogeneity changes.
+</div>
+
+
+## Method Overview
+
+<div style="font-size: 16px;">
+The workflow proceeds as follows:
+
+Rank genes by heterogeneity statistic
+
+Genes are ranked using a selected variable from the DVG results, typically:
+
+log2 fold change of mean-adjusted variance
+
+mean-adjusted variance score
+
+other heterogeneity metrics
+
+Example ranking variable:
+```{r, eval=FALSE}
+log2FC_mean_adjusted_variance
+```
+Map gene symbols to ENTREZ IDs
+
+MSigDB gene sets are defined using ENTREZ identifiers, so gene symbols are converted before enrichment analysis. MsigDB Collections listed below: H, C2, C3, C4, C5, C6, C7, C8 
+
+Construct ranked gene list
+
+A ranked vector is constructed:
+
+$$
+geneList = {g_1, g_2, ..., g_n}
+$$
+sorted by the heterogeneity statistic.
+
+Higher-ranked genes correspond to greater variability increases in the comparison group.
+
+```{r,results='hide', eval=TRUE ,warning=FALSE, message=FALSE}
 
 gsea_out <- run_msigdb_gsea_all_collections(
-  hsc_results = dvg_out$results,
-  rank_var = "mean_adjusted_var"
-)
-
-head(gsea_out$H)
+  hsc_results = dvg_out,species = "Mus musculus",
+  rank_var = "log2FC_mean_adjusted_variance", top_n = 1,
+  title_prefix = "HSC")
 
 ```
+</div>
 
 
+## Visualize the GSEA results 
 
+<div style="font-size: 16px;">
+The function returns a patchwork style of GSEA plots based on the top_n parameter. 
+</div>
+
+```{r,fig.align="center",fig.width=6, fig.height=4, out.width="80%", dpi=300}
+
+gsea_out$per_collection$`C5:MF`$panel_up
+
+```

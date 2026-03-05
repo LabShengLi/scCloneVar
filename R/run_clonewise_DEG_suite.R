@@ -308,6 +308,7 @@ run_clonewise_DEG_suite <- function(
         yintercept = -log10(fdr_cutoff),
         linetype = "dashed"
       ) +
+      ggplot2::coord_cartesian(xlim = c(-4, 4)) +
       ggplot2::theme_classic(base_size = 16) +
       ggplot2::labs(
         title = paste0("Clone-wise DEG Volcano (MAST, Top ", top_hvgs, " HVGs)"),
