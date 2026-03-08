@@ -24,53 +24,39 @@ compute_pca_clone_heterogeneity <- function(
 
   if (!(clone_col %in% colnames(seu@meta.data)))
     stop("clone_col not found in metadata: ", clone_col)
-
   if (!(sample_col %in% colnames(seu@meta.data)))
     stop("sample_col not found in metadata: ", sample_col)
-
   if (!("celltype" %in% colnames(seu@meta.data)))
     stop("metadata column 'celltype' not found.")
-
   cells_keep <- rownames(seu@meta.data)[
     seu@meta.data$celltype %in% celltype_keep &
       seu@meta.data[[clone_col]] != "0"
   ]
-
   if (length(cells_keep) == 0)
     stop("No cells left after filtering.")
-
   seu <- subset(seu, cells = cells_keep)
-
   seu$CloneID <- seu@meta.data[[clone_col]]
-
   Seurat::DefaultAssay(seu) <- assay
 
   # ==========================================================
   # Step 2/5: HVG + PCA
   # ==========================================================
-  message("Step 2/5: HVG filtering and PCA...")
+  message("Step 2/5: Running HVG filtering and PCA on subset...")
 
   seu <- Seurat::FindVariableFeatures(
     seu,
     selection.method = "vst",
     nfeatures = 2000
   )
-
   expr_data <- Seurat::GetAssayData(seu, layer = "data")
-
   hvgs <- Seurat::VariableFeatures(seu)
-
   gene_pct <- Matrix::rowMeans(expr_data[hvgs, , drop = FALSE] > 0)
   gene_avg <- Matrix::rowMeans(expr_data[hvgs, , drop = FALSE])
-
   genes_pass <- names(gene_pct)[
     gene_pct >= min_pct & gene_avg >= min_mean
   ]
-
   seu <- subset(seu, features = genes_pass)
-
   seu <- Seurat::ScaleData(seu, verbose = FALSE)
-
   seu <- Seurat::RunPCA(seu, npcs = n_pcs, verbose = FALSE)
 
   # ==========================================================
@@ -97,20 +83,15 @@ compute_pca_clone_heterogeneity <- function(
   message("Step 4/5: Computing intra-clone distances...")
 
   clone_ids_all <- unique(pc_df$CloneID)
-
   pb <- progress::progress_bar$new(
     format = "  intra [:bar] :percent eta: :eta",
     total = length(clone_ids_all),
     clear = FALSE
   )
-
   compute_clone_intra <- function(clone_id) {
-
     pb$tick()
-
     clone_df <- pc_df %>%
       dplyr::filter(CloneID == clone_id)
-
     if (nrow(clone_df) < 2) {
       return(dplyr::tibble(
         CloneID = clone_id,
@@ -120,17 +101,12 @@ compute_pca_clone_heterogeneity <- function(
         centroid = list(NA)
       ))
     }
-
     pc_mat <- as.matrix(
       clone_df[, grep("^PC", colnames(clone_df)), drop = FALSE]
     )
-
     centroid <- colMeans(pc_mat)
-
     centered <- sweep(pc_mat, 2, centroid, "-")
-
     dists <- sqrt(rowSums(centered^2))
-
     dplyr::tibble(
       CloneID = clone_id,
       sampleName = clone_df$sampleName[1],
@@ -139,7 +115,6 @@ compute_pca_clone_heterogeneity <- function(
       centroid = list(centroid)
     )
   }
-
   intra_results <- purrr::map_dfr(
     clone_ids_all,
     compute_clone_intra
@@ -152,61 +127,46 @@ compute_pca_clone_heterogeneity <- function(
 
   intra_filtered <- intra_results %>%
     dplyr::filter(!is.na(intra_dist), n_cells >= min_cells)
-
+  clone_ids <- intra_filtered$CloneID
+  # ---- Extract PC columns once ----
+  pc_cols <- grep("^PC", colnames(pc_df), value = TRUE)
+  df_pc <- pc_df %>%
+    dplyr::filter(CloneID %in% clone_ids)
+  # ---- Precompute centroid list ----
   centroid_list <- intra_filtered %>%
     dplyr::select(CloneID, centroid) %>%
     tibble::deframe()
-
-  clone_ids <- names(centroid_list)
-
+  # ---- Split PC matrices by clone (major speedup) ----
+  clone_cells <- split(df_pc[, pc_cols], df_pc$CloneID)
+  # ---- Generate clone pairs ----
   pairwise_df <- expand.grid(
     CloneA = clone_ids,
     CloneB = clone_ids,
     stringsAsFactors = FALSE
   ) %>%
+    tibble::as_tibble() %>%
     dplyr::filter(CloneA != CloneB)
+  pb2 <- txtProgressBar(min = 0, max = nrow(pairwise_df), style = 3)
 
-  pb2 <- progress::progress_bar$new(
-    format = "  inter [:bar] :percent eta: :eta",
-    total = nrow(pairwise_df),
-    clear = FALSE
-  )
-
-  calc_inter_dist <- function(clone_A, clone_B) {
-
-    pb2$tick()
-
-    df_A <- pc_df %>%
-      dplyr::filter(CloneID == clone_A)
-
-    pcs_A <- as.matrix(
-      df_A[, grep("^PC", colnames(df_A)), drop = FALSE]
-    )
-
+  # ---- Preallocate vector (much faster) ----
+  inter_dist <- numeric(nrow(pairwise_df))
+  for (i in seq_len(nrow(pairwise_df))) {
+    clone_A <- pairwise_df$CloneA[i]
+    clone_B <- pairwise_df$CloneB[i]
+    pcs_A <- as.matrix(clone_cells[[clone_A]])
     centroid_B <- centroid_list[[clone_B]]
-
-    if (is.null(centroid_B) || nrow(pcs_A) == 0)
-      return(NA_real_)
-
-    dists <- sqrt(rowSums(
-      (pcs_A -
-         matrix(
-           centroid_B,
-           nrow = nrow(pcs_A),
-           ncol = length(centroid_B),
-           byrow = TRUE
-         ))^2
-    ))
-
-    mean(dists)
+    if (is.null(centroid_B) || nrow(pcs_A) == 0) {
+      inter_dist[i] <- NA_real_
+    } else {
+      centered <- sweep(pcs_A, 2, centroid_B, "-")
+      dists <- sqrt(rowSums(centered^2))
+      inter_dist[i] <- mean(dists)
+    }
+    if (i %% 1000 == 0)
+      setTxtProgressBar(pb2, i)
   }
-
-  pairwise_df$inter_dist <- purrr::map2_dbl(
-    pairwise_df$CloneA,
-    pairwise_df$CloneB,
-    calc_inter_dist
-  )
-
+  close(pb2)
+  pairwise_df$inter_dist <- inter_dist
   avg_inter <- pairwise_df %>%
     dplyr::group_by(CloneA) %>%
     dplyr::summarise(
@@ -214,7 +174,6 @@ compute_pca_clone_heterogeneity <- function(
       .groups = "drop"
     ) %>%
     dplyr::rename(CloneID = CloneA)
-
   summary_df <- intra_results %>%
     dplyr::left_join(avg_inter, by = "CloneID")
 
