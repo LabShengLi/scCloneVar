@@ -1,9 +1,8 @@
-<p align="right">
-<img src="Figures/figure_v1.png" width="350">
-</p>
-
 # scCloneVar
-
+<h1>
+  scCloneVar
+  <img src="Figures/figure_v1.png" align="right" width="90">
+</h1>
 Clone-wise heterogeneity and differential expression analysis toolkit for single-cell RNA-seq data.
 
 ## Installation
