@@ -1,4 +1,3 @@
-# scCloneVar
 <h1>
   scCloneVar
   <img src="Figures/figure_v1.png" align="right" width="90">
