@@ -59,6 +59,7 @@ seurat_obj <- scCloneVar_test_demo
 
 ```{r}
 seurat_obj
+
 ```
 
 # Clone Size Distribution
@@ -556,6 +557,33 @@ dvg_plots$volcano_mean_adj
 
 ```
 
+# Visualization of per-gene normalized experssion and heterogeneity
+
+<div style="font-size: 16px;">
+We can also visualized the expression pattern and the variance of the individual gene from the comparison groups using function plot_density_gene(), showing Eya1 as an example below:
+</div>
+
+```{r}
+table(seurat_obj$donor_age)
+```
+
+```{r,fig.align="center",fig.width=6, fig.height=4, out.width="80%", dpi=300}
+
+plot_density_gene(
+    seurat_obj = seurat_obj,
+    gene = "Eya1",
+    group_col = "donor_age",
+    group1_labels = c("Y", "Young"),
+    group2_labels = c("O", "Old"),
+    group1_name = "Young",
+    group2_name = "Old",
+    title_prefix = "Day60 HSC",
+    dvgs_df = dvg_out,
+    mean_adj_var_group1_col = "mean_adjusted_var_Young",
+    mean_adj_var_group2_col = "mean_adjusted_var_Old"
+)
+
+```
 
 # GSEA Across MSigDB Collections
 

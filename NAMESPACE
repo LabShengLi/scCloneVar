@@ -2,6 +2,7 @@
 
 export(compute_pca_clone_heterogeneity)
 export(compute_variance_and_cv)
+export(plot_density_gene)
 export(plot_variance_cv_summaries)
 export(run_clone_distribution_engine)
 export(run_clonewise_DEG_suite)
