@@ -7,7 +7,6 @@
 run_msigdb_gsea_all_collections(
   hsc_results,
   species = "Mus musculus",
-  background_genes = NULL,
   msig_collections = c("H", "C2:CGP", "C2:BIOCARTA", "C2:KEGG_MEDICUS", "C2:PID",
     "C2:REACTOME", "C2:WIKIPATHWAYS", "C2:KEGG_LEGACY", "C3:MIRDB", "C3:MIR_LEGACY",
     "C3:GTRD", "C3:TFT_LEGACY", "C4:3CA", "C4:CGN", "C4:CM", "C5:BP", "C5:CC", "C5:MF",

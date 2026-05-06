@@ -1,11 +1,12 @@
 #' Run MSigDB GSEA across multiple collections
 #'
 #' @importFrom magrittr %>%
+#' @import org.Mm.eg.db
+#' @import org.Hs.eg.db
 #' @export
 run_msigdb_gsea_all_collections <- function(
     hsc_results,
     species = "Mus musculus",
-    background_genes = NULL,
     msig_collections = c(
       "H",
       "C2:CGP", "C2:BIOCARTA", "C2:KEGG_MEDICUS", "C2:PID", "C2:REACTOME",
@@ -21,44 +22,52 @@ run_msigdb_gsea_all_collections <- function(
     top_n = 6,
     title_prefix = "HSC"
 ) {
-  
+
   # sanity checks
   stopifnot("gene" %in% colnames(hsc_results))
   stopifnot(rank_var %in% colnames(hsc_results))
-  
+
   set.seed(42)
-  
+
+  # Select OrgDb based on species
+  OrgDb <- switch(
+    species,
+    "Mus musculus" = org.Mm.eg.db::org.Mm.eg.db,
+    "Homo sapiens" = org.Hs.eg.db::org.Hs.eg.db,
+    stop("Unsupported species. Use 'Mus musculus' or 'Homo sapiens'.")
+  )
+
   # SYMBOL → ENTREZ
   gene_map <- clusterProfiler::bitr(
     unique(hsc_results$gene),
     fromType = "SYMBOL",
     toType   = "ENTREZID",
-    OrgDb    = org.Mm.eg.db::org.Mm.eg.db
+    OrgDb    = OrgDb
   )
-  
+
   hsc_results <- hsc_results %>%
     dplyr::left_join(gene_map, by = c("gene" = "SYMBOL")) %>%
     dplyr::filter(!is.na(ENTREZID))
-  
+
   # lookup table for later
   entrez2symbol <- gene_map %>%
     dplyr::select(ENTREZID, SYMBOL)
-  
+
   # ranked gene list
   ranked_tbl <- hsc_results %>%
     dplyr::arrange(desc(.data[[rank_var]])) %>%
     dplyr::distinct(ENTREZID, .keep_all = TRUE)
-  
+
   geneList <- ranked_tbl[[rank_var]]
   names(geneList) <- ranked_tbl$ENTREZID
   geneList <- sort(geneList, decreasing = TRUE)
-  
+
   n_genes_used <- length(geneList)
-  
+
   message("Input genes: ", length(unique(hsc_results$gene)))
   message("Mapped ENTREZ: ", length(unique(entrez2symbol$ENTREZID)))
   message("Final ranked genes: ", n_genes_used)
-  
+
   # convert core_enrichment to SYMBOLs
   convert_core_to_symbol <- function(core_string) {
     if (is.na(core_string) || core_string == "") return(NA_character_)
@@ -69,12 +78,12 @@ run_msigdb_gsea_all_collections <- function(
       unique()
     paste(symbols, collapse = "; ")
   }
-  
+
   # run one MSigDB collection
   run_one_collection <- function(msig_collection) {
-    
+
     message("\n MSigDB collection: ", msig_collection)
-    
+
     if (grepl(":", msig_collection)) {
       parts <- strsplit(msig_collection, ":")[[1]]
       m_df <- msigdbr::msigdbr(
@@ -88,18 +97,18 @@ run_msigdb_gsea_all_collections <- function(
         collection = msig_collection
       )
     }
-    
+
     if (nrow(m_df) == 0) {
       message("No gene sets found.")
       return(NULL)
     }
-    
+
     term2gene <- m_df %>%
       dplyr::select(gs_name, ncbi_gene)
-    
+
     term2name <- m_df %>%
       dplyr::select(gs_name, gs_description)
-    
+
     gsea_res <- tryCatch({
       clusterProfiler::GSEA(
         geneList     = geneList,
@@ -109,7 +118,7 @@ run_msigdb_gsea_all_collections <- function(
         verbose      = FALSE
       )
     }, error = function(e) NULL)
-    
+
     if (is.null(gsea_res) || nrow(gsea_res@result) == 0) {
       return(list(
         gsea_result  = gsea_res,
@@ -118,7 +127,7 @@ run_msigdb_gsea_all_collections <- function(
         panel_down   = NULL
       ))
     }
-    
+
     # summary table with genes
     gsea_tbl <- gsea_res@result %>%
       dplyr::mutate(
@@ -132,25 +141,25 @@ run_msigdb_gsea_all_collections <- function(
           FUN.VALUE = character(1)
         )
       )
-    
+
     # FDR-filtered plotting
     sig_res <- gsea_res@result %>%
       dplyr::filter(p.adjust < 0.05)
-    
+
     top_up <- sig_res %>%
       dplyr::filter(NES > 0) %>%
       dplyr::arrange(desc(NES)) %>%
       dplyr::slice_head(n = top_n)
-    
+
     top_down <- sig_res %>%
       dplyr::filter(NES < 0) %>%
       dplyr::arrange(NES) %>%
       dplyr::slice_head(n = top_n)
-    
+
     make_panel <- function(df, label) {
-      
+
       if (nrow(df) == 0) return(NULL)
-      
+
       plots <- lapply(seq_len(nrow(df)), function(i) {
         tryCatch(
           ggplotify::as.ggplot(
@@ -167,13 +176,13 @@ run_msigdb_gsea_all_collections <- function(
           error = function(e) NULL
         )
       })
-      
+
       plots <- plots[!sapply(plots, is.null)]
       if (length(plots) == 0) return(NULL)
-      
+
       patchwork::wrap_plots(plots)
     }
-    
+
     list(
       gsea_result = gsea_res,
       gsea_table  = gsea_tbl,
@@ -181,30 +190,30 @@ run_msigdb_gsea_all_collections <- function(
       panel_down  = make_panel(top_down, "Down")
     )
   }
-  
+
   # run all collections
   results <- lapply(msig_collections, run_one_collection)
   names(results) <- msig_collections
-  
+
   # combine plots
   up_panels <- lapply(results, `[[`, "panel_up")
   up_panels <- up_panels[!sapply(up_panels, is.null)]
-  
+
   down_panels <- lapply(results, `[[`, "panel_down")
   down_panels <- down_panels[!sapply(down_panels, is.null)]
-  
+
   combined_up_panel <- if (length(up_panels) > 0)
     patchwork::wrap_plots(up_panels) else NULL
-  
+
   combined_down_panel <- if (length(down_panels) > 0)
     patchwork::wrap_plots(down_panels) else NULL
-  
+
   # combine summary tables
   gsea_summary_table <- dplyr::bind_rows(
     lapply(results, `[[`, "gsea_table")
   ) %>%
     dplyr::arrange(collection, desc(NES))
-  
+
   return(list(
     per_collection      = results,
     combined_up_panel   = combined_up_panel,
