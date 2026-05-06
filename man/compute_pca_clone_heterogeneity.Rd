@@ -15,6 +15,7 @@ compute_pca_clone_heterogeneity(
   min_mean = 0.1,
   min_cells = 2,
   group_recode = NULL,
+  sample_order = NULL,
   prefix = "Clone Heterogeneity"
 )
 }

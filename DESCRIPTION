@@ -22,7 +22,6 @@ Imports:
     ggplot2,
     purrr,
     Matrix,
-    progress,
     progressr,
     patchwork,
     ggrepel,
@@ -33,6 +32,7 @@ Imports:
     clusterProfiler,
     enrichplot,
     org.Mm.eg.db,
+    org.Hs.eg.db,
     stringr,
     scales,
     openxlsx,
@@ -46,6 +46,6 @@ Suggests:
     knitr,
     rmarkdown
 Depends: 
-    R (>= 3.5)
+    R (>= 4.0)
 LazyData: true
 VignetteBuilder: knitr
