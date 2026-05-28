@@ -8,7 +8,7 @@ Clone-wise heterogeneity and differential expression analysis toolkit for single
 
 ```r
 install.packages("devtools")
-devtools::install_github("ChrisXC25/scCloneVar")
+devtools::install_github("LabShengLi/scCloneVar")
 library(scCloneVar)
 ```
 
