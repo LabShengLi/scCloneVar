@@ -58,9 +58,9 @@ A few quick notes from running this:
 
 ### `run_clonewise_DEG_suite()`
 
-The main differential expression analysis function. Given a Seurat object and two groups of clone IDs (Group 1 vs Group 2), it performs differential expression testing across three gene sets: all genes, the top *n* highly variable genes (HVGs), and a filtered HVG set based on minimum detection rate, mean normalized expression, and mean raw count thresholds. Two statistical methods are supported: Wilcoxon and MAST. For each analysis, the function calculates both Benjamini–Hochberg (BH) and Benjamini–Yekutieli (BY) adjusted p-values, adds average expression values for each group, and summarizes the number of significant genes based on user-defined log2 fold-change and FDR thresholds.
+The main differential expression analysis function. Given a Seurat object and two clone groups, it performs DEG testing across three gene sets (all genes, top HVGs, and filtered HVGs) using Wilcoxon and MAST. Results include BH/BY-adjusted p-values, group-level average expression, and counts of significant genes based on user-defined log2FC and FDR thresholds.
 
-All results are saved to a single Excel workbook containing a `Summary` sheet and separate sheets for each comparison. A labeled volcano plot is generated for the MAST analysis on the top HVG gene set, highlighting the top 20 upregulated and downregulated genes. All output files are organized into a timestamped subdirectory for easy tracking and reproducibility.
+Outputs are saved to a timestamped directory as a single Excel workbook with summary tables and comparison-specific results. A labeled volcano plot is generated for the MAST analysis on the top HVG gene set.
 
 ### `compute_pca_clone_heterogeneity()`
 
@@ -73,24 +73,12 @@ The function performs within-sample comparisons of intra- versus inter-clone dis
 
 ### `compute_variance_metrics()`
 
-This function identifies genes with differential transcriptional variability between two groups (e.g., young vs. old, or low- versus high-OA clones). For each highly variable gene (HVG), variability is assessed using both the **Brown–Forsythe test**, which is based on deviations from the median and is more robust to outliers, and **Levene’s test**, which is based on deviations from the mean.
-
-To account for the strong relationship between mean expression and variance in single-cell RNA-seq data, the function also models the global mean–variance trend using LOESS. A **mean-adjusted variance** is then calculated as the residual variance after removing the expected variance associated with a gene’s expression level. This adjustment helps identify genes with unusually high or low variability beyond what would be expected from their mean expression alone.
-
-The function returns a gene-level results table containing raw and mean-adjusted variance estimates for each group, log2 fold-changes of both variance measures, and Benjamini–Hochberg (BH) adjusted p-values for both statistical tests. These results serve as the primary input for downstream differential variability gene (DVG) visualization and pathway enrichment analyses.
+Identifies genes with differential transcriptional variability between two groups using Brown–Forsythe and Levene’s tests. The function also calculates mean-adjusted variance by modeling the global mean–variance relationship with LOESS, helping distinguish true variability changes from expression-level effects. Outputs include raw and adjusted variance estimates, log2 fold-changes, adjusted p-values, and summary statistics for downstream DVG analysis and pathway enrichment.
 
 
 ### `plot_variance_summaries()`
 
-This function generates a comprehensive visualization report from the output of `compute_variance_metrics()`. The report includes:
-
-* A per-gene boxplot of raw variance for each group, with significance assessed using a Wilcoxon test.
-* A boxplot of mean-adjusted variance, allowing comparison of variability after accounting for the mean–variance relationship.
-* Density plots showing the distribution of mean-adjusted variance across groups.
-* Two volcano plots, one based on raw variance and the other on mean-adjusted variance, with the top 10 genes showing the largest increases and decreases in variability labeled.
-* A summary table reporting the number of significant genes at multiple log2 fold-change thresholds (0, 0.1, 0.25, and 0.5).
-
-Together, these visualizations provide an overview of differential transcriptional variability between groups and help identify genes that contribute most strongly to changes in cellular heterogeneity.
+Generates a visualization report from the output of `compute_variance_metrics()`, including variance boxplots, mean-adjusted variance distributions, raw and adjusted variance volcano plots, and summary tables of significant genes across multiple log2FC thresholds.
 
 
 ### `plot_density_gene()`
