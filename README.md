@@ -7,7 +7,8 @@ Clone-wise heterogeneity and differential expression analysis toolkit for single
 
 ## Functions Overview
 
-scCloneVar provides an integrated framework for analyzing clonal structure and transcriptional heterogeneity in single-cell RNA-seq data. The toolkit enables clone-wise differential expression analysis, allowing users to compare predefined clone groups across multiple gene universes and statistical models. It quantifies intra- and inter-clonal transcriptional dispersion in PCA space and identifies differential variance genes (DVGs) to capture heterogeneity beyond mean expression changes. The package also supports Output Activity (OA) analysis to classify clones by lineage bias and generate comprehensive visualization reports. Finally, pathway-level interpretation is facilitated through MSigDB-based GSEA, enabling biological contextualization of clone-associated signatures.
+scCloneVar is an integrated toolkit for studying clonal structure and transcriptional heterogeneity in single-cell RNA-seq data. It supports clone-level differential expression analysis, enabling comparisons between user-defined clone groups using multiple statistical approaches and gene sets. The package quantifies transcriptional variability within and between clones in PCA space and identifies differential variability genes (DVGs), capturing heterogeneity that may not be detected through mean expression analysis alone. In addition, scCloneVar performs Output Activity (OA) analysis to assess lineage bias across clones and generates publication-ready visualizations and summary reports. Functional interpretation is supported through pathway enrichment analysis using MSigDB-based GSEA.
+
 
 ## Installation
 
@@ -19,7 +20,7 @@ library(scCloneVar)
 
 ## Required Packages
 
-scCloneVar builds on a number of established single-cell and statistical R packages. Most of these will be pulled in automatically as dependencies, but if you run into installation issues it's usually faster to install them yourself first.
+scCloneVar depends on several widely used single-cell and statistical R packages. These dependencies are typically installed automatically, but manual installation may help resolve installation issues on some systems.
 
 **Core single-cell and data wrangling**
 
@@ -57,64 +58,60 @@ A few quick notes from running this:
 
 ### `run_clonewise_DEG_suite()`
 
-The main differential expression workhorse. Given a Seurat object and two sets of clone IDs (Group1 vs Group2), this runs DEG testing across **three gene universes** — all genes, the top *n* HVGs, and a filtered HVG set (genes passing minimum detection rate, mean normalized expression, and mean raw count thresholds) — and **two methods** (Wilcoxon and MAST). For each of the six resulting comparisons it computes BH and BY adjusted p-values, appends per-group average expression, and tabulates the number of significant genes at a user-defined log2FC × FDR cutoff.
+The main differential expression analysis function. Given a Seurat object and two groups of clone IDs (Group 1 vs Group 2), it performs differential expression testing across three gene sets: all genes, the top *n* highly variable genes (HVGs), and a filtered HVG set based on minimum detection rate, mean normalized expression, and mean raw count thresholds. Two statistical methods are supported: Wilcoxon and MAST. For each analysis, the function calculates both Benjamini–Hochberg (BH) and Benjamini–Yekutieli (BY) adjusted p-values, adds average expression values for each group, and summarizes the number of significant genes based on user-defined log2 fold-change and FDR thresholds.
 
-Everything gets dumped into a single Excel workbook with a `Summary` sheet plus one sheet per comparison, and the MAST × Top-HVGs combination is rendered as a labeled volcano plot (top 20 genes per side). Outputs go into a timestamped subfolder.
+All results are saved to a single Excel workbook containing a `Summary` sheet and separate sheets for each comparison. A labeled volcano plot is generated for the MAST analysis on the top HVG gene set, highlighting the top 20 upregulated and downregulated genes. All output files are organized into a timestamped subdirectory for easy tracking and reproducibility.
 
 ### `compute_pca_clone_heterogeneity()`
 
-This is the function for quantifying transcriptional dispersion in PCA space. After subsetting to cell types of interest (default: LT-HSC and ST-HSC) and re-running HVG selection → scaling → PCA on the subset, it computes two distance measures per clone:
+This function quantifies transcriptional heterogeneity in PCA space. After subsetting the data to selected cell types (default: LT-HSC and ST-HSC), it performs highly variable gene selection, scaling, and PCA on the subsetted cells. Two distance metrics are then calculated for each clone:
 
-- **Intra-clone distance** — average Euclidean distance from each cell to its own clone centroid in the top *n* PCs. This is essentially "how spread out is this clone in transcriptional space?"
-- **Inter-clone distance** — average distance from cells of one clone to the centroids of all *other* clones. This gives you a sense of how distinct clones are from each other.
+* **Intra-clone distance**: the average Euclidean distance between cells and their clone centroid in the top *n* principal components, reflecting the transcriptional dispersion within a clone.
+* **Inter-clone distance**: the average distance between cells from one clone and the centroids of all other clones, providing a measure of transcriptional separation between clones.
 
-It then runs within-sample Wilcoxon tests (intra vs inter) and between-sample tests (e.g., young vs old) and returns a faceted violin plot with significance brackets, plus the underlying summary tables and pairwise distance matrix.
+The function performs within-sample comparisons of intra- versus inter-clone distances using Wilcoxon tests, as well as between-sample comparisons (e.g., young versus old). Results are returned as a faceted violin plot with significance annotations, along with summary statistics and the underlying pairwise distance matrix.
 
 ### `compute_variance_metrics()`
 
-For each HVG, this tests whether transcriptional variance differs between two groups (e.g., young vs old, or low- vs high-OA clones) using both **Brown–Forsythe** (median-centered, more robust) and **Levene's test** (mean-centered). On top of the raw variance, it also fits a LOESS curve to the global mean–variance relationship and returns a **mean-adjusted variance** — basically the residual after regressing out the expected variance for a gene's expression level. This matters because in scRNA-seq, variance scales strongly with mean expression, so without adjusting you'll just keep rediscovering highly expressed genes.
+This function identifies genes with differential transcriptional variability between two groups (e.g., young vs. old, or low- versus high-OA clones). For each highly variable gene (HVG), variability is assessed using both the **Brown–Forsythe test**, which is based on deviations from the median and is more robust to outliers, and **Levene’s test**, which is based on deviations from the mean.
 
-Returns a per-gene table with raw and adjusted variance for each group, log2 fold-changes of both, and BH-adjusted p-values for both tests. The output of this function is what feeds directly into the DVG (differential variance gene) volcano plots and GSEA.
+To account for the strong relationship between mean expression and variance in single-cell RNA-seq data, the function also models the global mean–variance trend using LOESS. A **mean-adjusted variance** is then calculated as the residual variance after removing the expected variance associated with a gene’s expression level. This adjustment helps identify genes with unusually high or low variability beyond what would be expected from their mean expression alone.
+
+The function returns a gene-level results table containing raw and mean-adjusted variance estimates for each group, log2 fold-changes of both variance measures, and Benjamini–Hochberg (BH) adjusted p-values for both statistical tests. These results serve as the primary input for downstream differential variability gene (DVG) visualization and pathway enrichment analyses.
+
 
 ### `plot_variance_summaries()`
 
-Takes the data frame produced by `compute_variance_metrics()` and generates a full visual report:
+This function generates a comprehensive visualization report from the output of `compute_variance_metrics()`. The report includes:
 
-- Per-gene variance boxplot (raw variance, both groups, Wilcoxon-tested)
-- Mean-adjusted variance boxplot
-- Density plot of mean-adjusted variance distributions
-- Two volcano plots — one for raw variance, one for mean-adjusted — with the top 10 genes on each side labeled
-- A summary count table reporting how many genes pass at several log2FC thresholds (0, 0.1, 0.25, 0.5)
+* A per-gene boxplot of raw variance for each group, with significance assessed using a Wilcoxon test.
+* A boxplot of mean-adjusted variance, allowing comparison of variability after accounting for the mean–variance relationship.
+* Density plots showing the distribution of mean-adjusted variance across groups.
+* Two volcano plots, one based on raw variance and the other on mean-adjusted variance, with the top 10 genes showing the largest increases and decreases in variability labeled.
+* A summary table reporting the number of significant genes at multiple log2 fold-change thresholds (0, 0.1, 0.25, and 0.5).
+
+Together, these visualizations provide an overview of differential transcriptional variability between groups and help identify genes that contribute most strongly to changes in cellular heterogeneity.
+
 
 ### `plot_density_gene()`
 
-A focused per-gene plot for sanity-checking individual hits. Given a gene name and a grouping column, it draws expression density curves for the two groups (cells with zero expression are dropped so the distributions are interpretable). Optionally, if you pass in the DVG table from `compute_variance_metrics()`, it appends a small bar plot of mean-adjusted variance next to the density — useful for showing simultaneously that a gene differs in both *level* and *spread*.
+This function visualizes the expression distribution of a selected gene across two groups using density plots, excluding cells with zero expression for clearer interpretation. When provided with results from `compute_variance_metrics()`, it also displays mean-adjusted variance for each group, allowing users to assess differences in both expression level and transcriptional variability.
 
 ### `run_clone_distribution_engine()`
 
-A wrapper for visualizing how clones are distributed across samples and replicates. You give it a list of comparisons (each specifying a Seurat object, the samples to include, a minimum frequency threshold, and a title) and it produces stacked bar plots of relative clone size, lumping all sub-threshold clones into a single "Other" category. A custom palette builder makes sure colors are visually distinct (it filters out low-saturation colors from a pooled palette of Brewer, NPG, and D3 schemes) and "Other" is always grey. Returns the individual plots, a combined `patchwork` panel, and descriptive statistics (number of clones, min/max/mean frequency) per sample.
+This function visualizes clone composition across samples using stacked bar plots of relative clone frequency. Clones below a user-defined threshold are grouped into an "Other" category. The output includes individual plots, a combined figure, and summary statistics for clone frequencies within each sample.
 
 ### `run_low_high_OA_analysis_for_a_single_sample()`
 
-1. **Cell type UMAP** — a labeled `DimPlot` saved as PDF.
-2. **Output Activity (OA) computation** — for each clone, OA = (relative non-HSC frequency) / (relative HSC frequency). Clones in the bottom 30% are tagged as Low-OA (HSC-biased, low differentiation output) and the top 30% as High-OA (differentiation-biased). Per-clone and per-cell tables are saved as Excel.
-3. **OA UMAP** — cells colored by their clone's OA on a diverging red→blue scale, with cell-type centroids overlaid.
-4. **Clone-wise DEG** — internally calls `run_clonewise_DEG_suite()` on Low-OA vs High-OA clones, restricted to specified cell types (default: LT-HSC, ST-HSC, MPP).
-5. **Reference-marker volcano** — overlays user-supplied low/high-output marker genes on the MAST volcano and labels the ones that come out significant.
-6. **Universe-filtered Venn diagram** — intersects the significant Low-OA DEGs with a reference low-output marker list, restricted to the shared gene universe (so the overlap is statistically meaningful), and reports a hypergeometric p-value.
-7. **Contour UMAP** — density contours overlaid on the cell type UMAP, useful for showing where clones concentrate.
-
-Everything gets written to `output_dir/sample_label/` along with an `.rds` of the full results object.
+This function performs a complete Output Activity (OA) analysis workflow, including OA score calculation, UMAP visualization, differential expression analysis between Low- and High-OA clones, marker gene enrichment, and clone density mapping. All results, figures, and summary tables are saved to a sample-specific output directory.
 
 ### `run_msigdb_gsea_all_collections()`
 
-For pathway-level interpretation of the DVG (or DEG) signal. Takes a results data frame with a `gene` column and a ranking variable (default: `log2FC_mean_adjusted_variance_YO`), maps SYMBOL → ENTREZID via `org.Mm.eg.db` or `org.Hs.eg.db`, and runs `clusterProfiler::GSEA()` across a configurable list of MSigDB collections (defaults cover H, C2 subcollections, C3, C4, C5, C6, C7, C8).
-
-For each collection, the top *n* up- and down-regulated pathways (by NES, at FDR < 0.05) get rendered as `gseaplot2` enrichment plots, and leading-edge ENTREZ IDs are converted back to gene symbols for the summary table. Returns per-collection results, combined up/down panel plots across all collections, and a single tidy GSEA summary table.
+This function performs pathway enrichment analysis on ranked DVG or DEG results using MSigDB gene sets and `clusterProfiler::GSEA()`. Gene symbols are mapped to Entrez IDs, and enrichment is evaluated across selected MSigDB collections. For each collection, the top significantly enriched pathways are visualized with enrichment plots, and leading-edge genes are converted back to gene symbols. The function returns pathway-level results, summary visualizations, and a consolidated GSEA results table.
 
 ## Demo Dataset
 
-The package ships with `scCloneVar_test_demo`, a small Seurat object containing 20 Young and 20 Old clones from an in vitro cross-age dataset (with RNA assay, PCA, UMAP, and `CloneID` / `donor_age` metadata). Use it to test the workflow before running on your own data:
+The package ships with `scCloneVar_test_demo`, a small Seurat object containing 20 Young and 20 Old clones from an in vitro cross-age dataset (with RNA assay, PCA, UMAP, and `CloneID` / `donor_age` metadata):
 
 ```r
 data(scCloneVar_test_demo)
