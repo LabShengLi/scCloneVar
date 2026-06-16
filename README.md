@@ -104,3 +104,42 @@ The package ships with `scCloneVar_test_demo`, a small Seurat object containing 
 ```r
 data(scCloneVar_test_demo)
 ```
+
+## Environment
+
+Developed and tested under **R 4.4.1** on macOS (x86_64-apple-darwin20).
+
+### Package dependencies
+
+| Package | Version | Role |
+|---|---|---|
+| Seurat | `5.3.0` | Single-cell object, HVGs, PCA, FindMarkers |
+| Matrix | 1.7-3 | Sparse matrix operations |
+| dplyr | 1.1.4 | Data manipulation |
+| tidyr | 1.3.1 | Reshaping |
+| tibble | 3.2.1 | Data frames |
+| purrr | 1.0.4 | Functional iteration |
+| magrittr | 2.0.3 | Pipe |
+| stringr | 1.5.1 | String handling |
+| ggplot2 | 4.0.0 | Plotting |
+| patchwork | 1.3.0 | Plot composition |
+| ggrepel | 0.9.6 | Volcano labels |
+| ggplotify | 0.1.2 | Plot conversion |
+| ggsignif | `0.6.4` | Significance brackets |
+| ggsci | `3.2.0` | Color palettes |
+| ggvenn | `0.1.19` | Venn diagrams |
+| scales | 1.4.0 | Axis scaling |
+| RColorBrewer | 1.1-3 | Palettes |
+| colorspace | 2.1-1 | Color manipulation |
+| clusterProfiler | 4.12.6 | GSEA engine |
+| enrichplot | 1.24.4 | Enrichment plots |
+| msigdbr | 25.1.1 | MSigDB gene sets |
+| org.Hs.eg.db | 3.19.1 | Human annotation |
+| org.Mm.eg.db | `3.19.1` | Mouse annotation |
+| openxlsx | 4.2.8 | Excel export |
+| progress | 1.2.3 | Progress bars |
+| progressr | `0.15.1` | Progress signaling |
+| glue | 1.8.0 | String interpolation |
+
+
+
