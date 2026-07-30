@@ -70,6 +70,49 @@ compute_variance_metrics <- function(
 
   message("Keeping ", length(keep_genes), " genes after filtering.")
 
+  idx_g1 <- which(group_factor == g1)
+  idx_g2 <- which(group_factor == g2)
+
+  # ---------------- Mean-variance trend ----------------
+  mean_g1 <- Matrix::rowMeans(expr[, idx_g1, drop = FALSE])
+  mean_g2 <- Matrix::rowMeans(expr[, idx_g2, drop = FALSE])
+  var_g1_raw <- apply(expr[, idx_g1, drop = FALSE], 1, stats::var)
+  var_g2_raw <- apply(expr[, idx_g2, drop = FALSE], 1, stats::var)
+
+  trend_df <- data.frame(
+    mean = c(mean_g1, mean_g2),
+    var  = c(var_g1_raw, var_g2_raw)
+  )
+  trend_df <- trend_df[
+    !is.na(trend_df$mean) & trend_df$mean > 0 &
+      !is.na(trend_df$var)  & trend_df$var  > 0,
+  ]
+
+  fit_loess <- stats::loess(
+    log10(var) ~ log10(mean),
+    data = trend_df,
+    span = 0.75,
+    control = stats::loess.control(surface = "direct")
+  )
+
+  expected_var <- function(mean_vec) {
+    out <- rep(NA_real_, length(mean_vec))
+    ok <- !is.na(mean_vec) & mean_vec > 0
+    out[ok] <- 10 ^ stats::predict(fit_loess, newdata = data.frame(mean = mean_vec[ok]))
+    out
+  }
+
+  scale_g1 <- sqrt(expected_var(mean_g1))
+  scale_g2 <- sqrt(expected_var(mean_g2))
+
+  testable <- !is.na(scale_g1) & !is.na(scale_g2) & scale_g1 > 0 & scale_g2 > 0
+
+  adj_expr <- expr
+  adj_expr[, idx_g1] <- expr[, idx_g1, drop = FALSE] / scale_g1
+  adj_expr[, idx_g2] <- expr[, idx_g2, drop = FALSE] / scale_g2
+
+  message(sum(!testable), " gene(s) excluded: mean-variance trend not evaluable.")
+
   # ---------------- Variance tests ----------------
   do_tests <- function(x, group_factor) {
 
@@ -102,9 +145,11 @@ compute_variance_metrics <- function(
 
   progressr::handlers("txtprogressbar")
 
+  test_genes <- rownames(expr)[testable]
+
   chunks <- split(
-    rownames(expr),
-    ceiling(seq_along(rownames(expr)) / chunk_size)
+    test_genes,
+    ceiling(seq_along(test_genes) / chunk_size)
   )
 
   results_list <- list()
@@ -118,14 +163,15 @@ compute_variance_metrics <- function(
       p(sprintf("Chunk %d / %d", i, length(chunks)))
 
       genes <- chunks[[i]]
-      sub_expr <- expr[genes, , drop = FALSE]
+      sub_adj <- adj_expr[genes, , drop = FALSE]
+      sub_raw <- expr[genes, , drop = FALSE]
 
-      mat <- apply(sub_expr, 1, do_tests, group_factor = group_factor)
+      mat <- apply(sub_adj, 1, do_tests, group_factor = group_factor)
 
       bf_p   <- sapply(mat, `[[`, "bf")
       lev_p  <- sapply(mat, `[[`, "lev")
 
-      var_tbl <- apply(sub_expr, 1, function(x) {
+      var_tbl <- apply(sub_raw, 1, function(x) {
 
         df <- data.frame(expr = x, grp = group_factor)
 
@@ -167,43 +213,16 @@ compute_variance_metrics <- function(
   # ---------------- Mean-adjusted variance ----------------
   message("Computing mean-adjusted variance and SD ...")
 
-  mean_g1 <- apply(expr[, group_factor == g1], 1, mean, na.rm = TRUE)
-  mean_g2 <- apply(expr[, group_factor == g2], 1, mean, na.rm = TRUE)
+  mean_adjusted_var_g1 <- apply(adj_expr[, idx_g1, drop = FALSE], 1, stats::var, na.rm = TRUE)
+  mean_adjusted_var_g2 <- apply(adj_expr[, idx_g2, drop = FALSE], 1, stats::var, na.rm = TRUE)
 
-  mean_var_df <- data.frame(
-    gene = rownames(expr),
-    group = rep(c(g1, g2), each = nrow(expr)),
-    mean = c(mean_g1, mean_g2),
-    var = c(
-      var_results[[paste0("var_", g1)]],
-      var_results[[paste0("var_", g2)]]
-    )
-  )
+  adj_tbl <- data.frame(gene = rownames(expr))
+  adj_tbl[[paste0("mean_adjusted_var_", g1)]] <- mean_adjusted_var_g1
+  adj_tbl[[paste0("mean_adjusted_var_", g2)]] <- mean_adjusted_var_g2
+  adj_tbl[[paste0("mean_adjusted_sd_", g1)]]  <- sqrt(mean_adjusted_var_g1)
+  adj_tbl[[paste0("mean_adjusted_sd_", g2)]]  <- sqrt(mean_adjusted_var_g2)
 
-  mean_var_df <- mean_var_df %>%
-    dplyr::filter(!is.na(mean) & mean > 0 & !is.na(var) & var > 0)
-
-  fit_loess <- stats::loess(
-    log10(var) ~ log10(mean),
-    data = mean_var_df,
-    span = 0.75
-  )
-
-  mean_var_df$expected_logVar <-
-    stats::predict(fit_loess, newdata = mean_var_df)
-
-  mean_var_df$residual_logVar <-
-    log10(mean_var_df$var) - mean_var_df$expected_logVar
-
-  mean_var_df$mean_adjusted_var <- 10 ^ mean_var_df$residual_logVar
-  mean_var_df$mean_adjusted_sd  <- sqrt(mean_var_df$mean_adjusted_var)
-
-  adj_tbl <- mean_var_df %>%
-    dplyr::select(gene, group, mean_adjusted_var, mean_adjusted_sd) %>%
-    tidyr::pivot_wider(
-      names_from = group,
-      values_from = c(mean_adjusted_var, mean_adjusted_sd)
-    ) %>%
+  adj_tbl <- adj_tbl %>%
     dplyr::mutate(
       log2FC_mean_adjusted_variance =
         log2((.data[[paste0("mean_adjusted_var_", g2)]] + 1e-8) /
@@ -212,6 +231,7 @@ compute_variance_metrics <- function(
         log2((.data[[paste0("mean_adjusted_sd_", g2)]] + 1e-8) /
                (.data[[paste0("mean_adjusted_sd_", g1)]] + 1e-8))
     )
+
   merged <- var_results %>% dplyr::left_join(adj_tbl, by = "gene")
 
   message("Done. Generated table with variance tests and mean-adjusted variance metrics.")
